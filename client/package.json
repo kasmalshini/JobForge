@@ -1,0 +1,46 @@
+{
+  "name": "jobforge-client",
+  "version": "1.0.0",
+  "private": true,
+  "overrides": {
+    "nth-check": ">=2.0.1",
+    "postcss": ">=8.4.31"
+  },
+  "dependencies": {
+    "@react-spring/web": "^9.7.3",
+    "axios": "^1.6.2",
+    "lottie-react": "^2.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.1",
+    "socket.io-client": "^4.6.1",
+    "web-vitals": "^3.5.0"
+  },
+  "scripts": {
+    "start": "npx react-scripts start",
+    "build": "npx react-scripts build",
+    "test": "npx react-scripts test",
+    "eject": "npx react-scripts eject",
+    "audit:prod": "npm audit --omit=dev"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "react-scripts": "5.0.1"
+  }
+}

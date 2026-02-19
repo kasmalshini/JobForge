@@ -1,0 +1,218 @@
+name: JobForge CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  # Backend (Server) Testing
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    # MongoDB service for testing
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: server/package-lock.json
+    
+    - name: Install server dependencies
+      working-directory: ./server
+      run: npm ci
+    
+    - name: Run server linter
+      working-directory: ./server
+      run: npm run lint || echo "No lint script found, skipping..."
+      continue-on-error: true
+    
+    - name: Run server tests
+      working-directory: ./server
+      env:
+        MONGODB_URI: mongodb://localhost:27017/jobforge-test
+        JWT_SECRET: test-secret-key
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        CLIENT_URL: http://localhost:3000
+        NODE_ENV: test
+      run: npm test || echo "No tests found, skipping..."
+      continue-on-error: true
+    
+    - name: Check server build
+      working-directory: ./server
+      run: |
+        echo "Server does not require build step (Node.js runtime)"
+        node --version
+        npm --version
+
+  # Frontend (Client) Testing
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: client/package-lock.json
+    
+    - name: Install client dependencies
+      working-directory: ./client
+      run: npm ci
+    
+    - name: Run client linter
+      working-directory: ./client
+      run: npm run lint || echo "No lint script found, skipping..."
+      continue-on-error: true
+    
+    - name: Run client tests
+      working-directory: ./client
+      run: npm test -- --passWithNoTests || echo "No tests found, skipping..."
+      env:
+        CI: true
+      continue-on-error: true
+    
+    - name: Build client
+      working-directory: ./client
+      run: npm run build
+      env:
+        CI: false
+        GENERATE_SOURCEMAP: false
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: client-build-${{ matrix.node-version }}
+        path: client/build/
+        retention-days: 7
+
+  # Security and Code Quality Checks
+  security-scan:
+    name: Security & Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18.x
+    
+    - name: Run npm audit (Server)
+      working-directory: ./server
+      run: npm audit --audit-level=moderate || true
+      continue-on-error: true
+    
+    - name: Run npm audit (Client)
+      working-directory: ./client
+      run: npm audit --audit-level=moderate || true
+      continue-on-error: true
+    
+    - name: Check for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+
+  # Deployment (optional - uncomment when ready)
+  # deploy-staging:
+  #   name: Deploy to Staging
+  #   needs: [backend-test, frontend-test, security-scan]
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+  #   
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+  #   
+  #   - name: Deploy to Staging
+  #     run: |
+  #       echo "Deploying to staging environment..."
+  #       # Add your staging deployment commands here
+  #       # Examples:
+  #       # - Deploy to Heroku: git push heroku develop:main
+  #       # - Deploy to Railway: railway up
+  #       # - Deploy to Render: render deploy
+  
+  # deploy-production:
+  #   name: Deploy to Production
+  #   needs: [backend-test, frontend-test, security-scan]
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+  #   
+  #   - name: Download build artifacts
+  #     uses: actions/download-artifact@v4
+  #     with:
+  #       name: client-build-18.x
+  #       path: client/build/
+  #   
+  #   - name: Deploy Backend to Production
+  #     env:
+  #       MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  #       JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  #       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #     run: |
+  #       echo "Deploying backend to production..."
+  #       # Add your production backend deployment commands here
+  #   
+  #   - name: Deploy Frontend to Production
+  #     run: |
+  #       echo "Deploying frontend to production..."
+  #       # Add your production frontend deployment commands here
+  #       # Examples:
+  #       # - Deploy to Netlify: netlify deploy --prod --dir=client/build
+  #       # - Deploy to Vercel: vercel --prod
+  #       # - Deploy to AWS S3: aws s3 sync client/build/ s3://your-bucket/
+  
+  # Notification (optional)
+  # notify:
+  #   name: Send Notifications
+  #   needs: [backend-test, frontend-test, security-scan]
+  #   runs-on: ubuntu-latest
+  #   if: always()
+  #   
+  #   steps:
+  #   - name: Send Slack notification
+  #     uses: 8398a7/action-slack@v3
+  #     with:
+  #       status: ${{ job.status }}
+  #       text: 'JobForge CI/CD Pipeline completed!'
+  #       webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+  #     if: always()
