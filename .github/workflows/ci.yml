@@ -140,12 +140,14 @@ jobs:
       run: npm audit --audit-level=moderate || true
       continue-on-error: true
     
+    # Only run on PRs; on push to main/base, BASE and HEAD are the same and TruffleHog errors
     - name: Check for secrets
+      if: github.event_name == 'pull_request'
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
+        base: ${{ github.event.pull_request.base.sha }}
+        head: ${{ github.event.pull_request.head.sha }}
       continue-on-error: true
 
   # Deployment (optional - uncomment when ready)
