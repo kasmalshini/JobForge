@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Flashcard from './Flashcard';
 import api from '../../services/api';
 
-const FlashcardDeck = ({ category }) => {
+const FlashcardDeck = ({ category, role = null }) => {
   const [flashcards, setFlashcards] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -15,9 +15,14 @@ const FlashcardDeck = ({ category }) => {
   const fetchFlashcards = async () => {
     try {
       setLoading(true);
-      const url = category
-        ? `/flashcards?category=${category}`
-        : '/flashcards';
+      const params = new URLSearchParams();
+      if (category) {
+        params.set('category', category);
+      }
+      if (role) {
+        params.set('role', role);
+      }
+      const url = params.toString() ? `/flashcards?${params.toString()}` : '/flashcards';
       const response = await api.get(url);
       setFlashcards(response.data.flashcards);
       setCurrentIndex(0);
@@ -68,7 +73,9 @@ const FlashcardDeck = ({ category }) => {
         <h2 style={styles.title}>
           {category
             ? category.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-            : 'All Flashcards'}
+            : role
+              ? `${role} Flashcards`
+              : 'All Flashcards'}
         </h2>
         <p style={styles.counter}>
           {currentIndex + 1} / {flashcards.length}

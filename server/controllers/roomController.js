@@ -1,6 +1,8 @@
 const Room = require('../models/Room');
 const Score = require('../models/Score');
 const User = require('../models/User');
+const mongoose = require('mongoose');
+const { emitToUser } = require('../services/socketService');
 
 // @desc    Create a new room
 // @route   POST /api/rooms
@@ -317,6 +319,157 @@ const getUserRooms = async (req, res) => {
   }
 };
 
+// @desc    Invite user to a competition room
+// @route   POST /api/rooms/:roomId/invite
+// @access  Private
+const inviteUserToRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { email, userId } = req.body;
+    const inviterId = req.user._id;
+
+    const hasEmail = typeof email === 'string' && email.trim().length > 0;
+    const hasUserId = typeof userId === 'string' && userId.trim().length > 0;
+    if (!hasEmail && !hasUserId) {
+      return res
+        .status(400)
+        .json({ message: 'Invite email or userId is required' });
+    }
+
+    const normalizedEmail = hasEmail ? email.trim().toLowerCase() : null;
+    const normalizedUserId = hasUserId ? userId.trim() : null;
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const inviterIsParticipant = room.users.some(
+      (participant) => String(participant.userId) === String(inviterId)
+    );
+    if (!inviterIsParticipant) {
+      return res.status(403).json({ message: 'Only room participants can send invites' });
+    }
+
+    if (room.status !== 'waiting') {
+      return res.status(400).json({ message: 'Room is not accepting invites right now' });
+    }
+
+    let invitee = null;
+    if (normalizedEmail) {
+      invitee = await User.findOne({ email: normalizedEmail });
+    }
+
+    if (!invitee && normalizedUserId && mongoose.Types.ObjectId.isValid(normalizedUserId)) {
+      invitee = await User.findById(normalizedUserId);
+    }
+
+    if (!invitee) {
+      return res
+        .status(404)
+        .json({ message: 'User not found by provided email or user ID' });
+    }
+
+    if (String(invitee._id) === String(inviterId)) {
+      return res.status(400).json({ message: 'You cannot invite yourself' });
+    }
+
+    const alreadyInRoom = room.users.some(
+      (participant) => String(participant.userId) === String(invitee._id)
+    );
+    if (alreadyInRoom) {
+      return res.status(400).json({ message: 'User is already in this room' });
+    }
+
+    const inviter = await User.findById(inviterId).select('fullName name');
+    const inviterName = inviter?.fullName || inviter?.name || 'A player';
+
+    const notification = {
+      type: 'competition-invite',
+      title: 'Competition Invite',
+      message: `${inviterName} invited you to join room ${roomId}`,
+      roomId,
+      fromUserId: inviterId,
+      fromUserName: inviterName,
+      read: false,
+    };
+
+    invitee.notifications = invitee.notifications || [];
+    invitee.notifications.unshift(notification);
+    invitee.notifications = invitee.notifications.slice(0, 50);
+    await invitee.save();
+
+    const latestNotification = invitee.notifications[0];
+    emitToUser(String(invitee._id), 'notification:new', latestNotification);
+
+    res.json({
+      success: true,
+      message: `Invite sent to ${invitee.email || invitee._id}`,
+    });
+  } catch (error) {
+    console.error('Invite user error:', error);
+    res.status(500).json({
+      message: 'Error sending invite',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get current user's notifications
+// @route   GET /api/rooms/notifications/list
+// @access  Private
+const getNotifications = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('notifications');
+    const notifications = (user?.notifications || [])
+      .slice()
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({
+      success: true,
+      notifications,
+    });
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({
+      message: 'Error fetching notifications',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Mark notification as read
+// @route   PUT /api/rooms/notifications/:notificationId/read
+// @access  Private
+const markNotificationRead = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const notification = user.notifications.id(notificationId);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    notification.read = true;
+    await user.save();
+
+    res.json({
+      success: true,
+      notification,
+    });
+  } catch (error) {
+    console.error('Mark notification read error:', error);
+    res.status(500).json({
+      message: 'Error updating notification',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createRoom,
   joinRoom,
@@ -326,6 +479,9 @@ module.exports = {
   getRoom,
   getLeaderboard,
   getUserRooms,
+  inviteUserToRoom,
+  getNotifications,
+  markNotificationRead,
 };
 
 

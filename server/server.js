@@ -5,6 +5,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const connectDB = require('./config/db');
 const socketService = require('./services/socketService');
+const { startEmailQueue } = require('./services/emailQueue');
 const errorHandler = require('./middleware/errorHandler');
 const { generalLimiter, openaiLimiter, authLimiter } = require('./middleware/rateLimiter');
 
@@ -49,24 +50,34 @@ connectDB();
 
 const app = express();
 const server = http.createServer(app);
+const envOrigins = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = Array.from(new Set([
+  ...envOrigins,
+  'http://localhost:3000',
+  'http://localhost:3001',
+]));
 
 // Socket.io setup
 const io = socketIo(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
   },
 });
 
 // Initialize socket service
 socketService(io);
+startEmailQueue();
 
 // Apply general rate limiting to all API routes
 app.use('/api/', generalLimiter);
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: allowedOrigins,
   credentials: true,
 }));
 app.use(express.json());

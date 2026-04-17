@@ -19,6 +19,10 @@ import {
 // Combine both question types for mixed/general
 const INTERVIEW_QUESTIONS = [...GENERAL_QUESTIONS, ...(ROLE_QUESTIONS["Software Developer"] || [])];
 
+/** Must match server `TOTAL_COMPETITION_QUESTIONS` (first N general questions). */
+const COMPETITION_QUESTION_COUNT = 10;
+const COMPETITION_QUESTIONS = GENERAL_QUESTIONS.slice(0, COMPETITION_QUESTION_COUNT);
+
 const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', difficulty = null }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -49,7 +53,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
     return selectedQuestions;
   };
 
-  const questions = getQuestions();
+  const questions = roomId ? COMPETITION_QUESTIONS : getQuestions();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const currentQuestionObj = questions[currentQuestionIndex] || questions[0];
   const currentQuestion = getQuestionText(currentQuestionObj);
@@ -57,8 +61,8 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
   const currentDifficulty = getQuestionDifficulty(currentQuestionObj);
   const [scores, setScores] = useState(null);
   const [feedback, setFeedback] = useState('');
-  const [strengths, setStrengths] = useState('');
-  const [improvements, setImprovements] = useState('');
+  const [strengths, setStrengths] = useState([]);
+  const [improvements, setImprovements] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isQuestionVisible, setIsQuestionVisible] = useState(false);
   const [interviewComplete, setInterviewComplete] = useState(false);
@@ -95,8 +99,16 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
         };
         setScores(answerScores);
         setFeedback(data.feedback || '');
-        setStrengths(data.strengths || '');
-        setImprovements(data.improvements || '');
+        setStrengths(
+          Array.isArray(data.strengths)
+            ? data.strengths
+            : (data.strengths ? [data.strengths] : [])
+        );
+        setImprovements(
+          Array.isArray(data.improvements)
+            ? data.improvements
+            : (data.improvements ? [data.improvements] : [])
+        );
 
         // Track this score for final calculation
         const combinedScore = Math.round(
@@ -104,11 +116,13 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
           (data.confidence * 0.3) + 
           (data.applicability * 0.3)
         );
+        const questionPoint = combinedScore >= 60 && data.applicability >= 50 ? 1 : 0;
         setAllScores((prevScores) => [...prevScores, {
           clarity: data.clarity,
           confidence: data.confidence,
           applicability: data.applicability,
           combinedScore,
+          questionPoint,
         }]);
 
         // If in competition mode, emit socket event
@@ -122,6 +136,10 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
               answer: submittedAnswer,
               scores: answerScores,
               interviewId: data.interviewId,
+              questionIndex: currentQuestionIndex,
+              totalQuestions: COMPETITION_QUESTION_COUNT,
+              questionPoint,
+              isCorrect: questionPoint === 1,
             });
           }
         }
@@ -134,22 +152,28 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
   };
 
   const handleNextQuestion = () => {
-    // In competition mode, only one question
     if (roomId) {
-      setInterviewComplete(true);
-      if (onComplete) {
-        onComplete();
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
+        setScores(null);
+        setFeedback('');
+        setStrengths([]);
+        setImprovements([]);
+        setIsQuestionVisible(false);
+        setTimeout(() => setIsQuestionVisible(true), 300);
+        return;
       }
+      setInterviewComplete(true);
+      if (onComplete) onComplete();
       return;
     }
 
-    // Regular interview mode - multiple questions
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
       setScores(null);
       setFeedback('');
-      setStrengths('');
-      setImprovements('');
+      setStrengths([]);
+      setImprovements([]);
       setIsQuestionVisible(false);
       // Keep allScores for final calculation
       setTimeout(() => setIsQuestionVisible(true), 300);
@@ -166,6 +190,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
   const finalAverage = allScores.length > 0
     ? Math.round(allScores.reduce((sum, s) => sum + s.combinedScore, 0) / allScores.length)
     : null;
+  const totalPoints = allScores.reduce((sum, s) => sum + (s.questionPoint || 0), 0);
 
   if (interviewComplete) {
     return (
@@ -183,6 +208,12 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
                 <div style={styles.summaryLabel}>Average Combined Score</div>
                 <div style={styles.summaryValue}>{finalAverage}/100</div>
               </div>
+              {roomId && (
+                <div style={styles.summaryStat}>
+                  <div style={styles.summaryLabel}>Competition Points</div>
+                  <div style={styles.summaryValue}>{totalPoints}/{COMPETITION_QUESTION_COUNT}</div>
+                </div>
+              )}
             </div>
             <p style={styles.summaryNote}>
               Your ranking is based on your average combined score: (Clarity × 0.4) + (Confidence × 0.3) + (Applicability × 0.3)
@@ -218,6 +249,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
           onTranscriptChange={() => {}}
           onAnswerSubmit={handleAnswerSubmit}
           disabled={isAnalyzing || !!scores}
+          resetKey={currentQuestionIndex}
         />
 
         {isAnalyzing && (

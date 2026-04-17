@@ -1,6 +1,46 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const notificationSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ['competition-invite'],
+      required: true,
+    },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    message: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    roomId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    fromUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    fromUserName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    read: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { timestamps: true }
+);
+
 const userSchema = new mongoose.Schema({
   fullName: {
     type: String,
@@ -48,6 +88,25 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpire: {
     type: Date,
   },
+  emailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  emailVerificationToken: {
+    type: String,
+  },
+  emailVerificationExpire: {
+    type: Date,
+  },
+  verificationEmailStatus: {
+    type: String,
+    enum: ['pending', 'sent', 'failed'],
+    default: 'pending',
+  },
+  verificationEmailRetryCount: {
+    type: Number,
+    default: 0,
+  },
   averageScore: {
     type: Number,
     default: 0,
@@ -60,6 +119,10 @@ const userSchema = new mongoose.Schema({
   rank: {
     type: Number,
     default: null,
+  },
+  notifications: {
+    type: [notificationSchema],
+    default: [],
   },
   createdAt: {
     type: Date,

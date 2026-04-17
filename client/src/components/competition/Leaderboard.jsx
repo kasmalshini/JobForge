@@ -80,7 +80,7 @@ const Leaderboard = ({ roomId }) => {
             </div>
             <div style={styles.userInfo}>
               <div style={styles.userName}>{entry.userName}</div>
-              <div style={styles.score}>Score: {entry.totalScore}/100</div>
+              <div style={styles.score}>Score: {entry.totalScore}/10</div>
               {entry.clarity && entry.confidence && entry.applicability && (
                 <div style={styles.scoreBreakdown}>
                   C: {entry.clarity} | Co: {entry.confidence} | A: {entry.applicability}

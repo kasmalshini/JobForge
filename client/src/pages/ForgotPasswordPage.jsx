@@ -9,11 +9,16 @@ const ForgotPasswordPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [resetLink, setResetLink] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setResetToken('');
+    setResetLink('');
+    setCopied(false);
     setLoading(true);
 
     try {
@@ -23,6 +28,9 @@ const ForgotPasswordPage = () => {
         // In development, show the token (remove in production)
         if (response.data.resetToken) {
           setResetToken(response.data.resetToken);
+        }
+        if (response.data.resetLink) {
+          setResetLink(response.data.resetLink);
         }
       }
     } catch (err) {
@@ -62,15 +70,16 @@ const ForgotPasswordPage = () => {
                 <code style={styles.token}>{resetToken}</code>
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(resetToken);
-                    alert('Token copied to clipboard!');
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(resetToken);
+                    setCopied(true);
                   }}
                   style={styles.copyButton}
                 >
                   Copy
                 </button>
               </div>
+              {copied && <p style={styles.copiedText}>Token copied.</p>}
               <button
                 type="button"
                 onClick={() => navigate(`/reset-password/${resetToken}`)}
@@ -78,6 +87,15 @@ const ForgotPasswordPage = () => {
               >
                 Go to Reset Password Page
               </button>
+            </div>
+          )}
+
+          {resetLink && (
+            <div style={styles.tokenContainer}>
+              <p style={styles.tokenLabel}>Reset Link (local development):</p>
+              <a href={resetLink} style={styles.resetLink} target="_blank" rel="noreferrer">
+                {resetLink}
+              </a>
             </div>
           )}
 
@@ -227,6 +245,17 @@ const styles = {
     fontSize: '16px',
     fontWeight: 'bold',
     cursor: 'pointer',
+  },
+  copiedText: {
+    margin: '0 0 12px 0',
+    fontSize: '13px',
+    color: '#238845',
+  },
+  resetLink: {
+    color: '#238845',
+    fontSize: '13px',
+    wordBreak: 'break-all',
+    textDecoration: 'underline',
   },
 };
 

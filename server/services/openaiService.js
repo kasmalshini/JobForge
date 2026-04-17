@@ -1,7 +1,13 @@
 const OpenAI = require('openai');
+const axios = require('axios');
+
+const getApiKey = () => (process.env.OPENAI_API_KEY || '').trim();
+const getModel = () => (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+const getGeminiApiKey = () => (process.env.GEMINI_API_KEY || '').trim();
+const getGeminiModel = () => (process.env.GEMINI_MODEL || 'gemini-1.5-flash').trim();
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: getApiKey(),
 });
 
 /**
@@ -69,6 +75,197 @@ const normalizeScore = (score) => {
   return Math.max(0, Math.min(100, Math.round(num)));
 };
 
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with', 'is', 'are', 'was', 'were',
+  'be', 'been', 'being', 'this', 'that', 'it', 'as', 'at', 'by', 'from', 'if', 'then', 'than', 'so',
+  'we', 'you', 'i', 'they', 'he', 'she', 'them', 'our', 'your', 'my', 'their', 'but', 'about', 'into',
+]);
+
+const tokenize = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !STOPWORDS.has(token));
+
+const isMeaninglessAnswer = (answer) => {
+  const raw = String(answer || '').trim();
+  if (!raw) return true;
+
+  // Very short content like "a", "ok", "hh" is not a meaningful interview answer.
+  if (raw.length < 6) return true;
+
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return true;
+
+  const alphaMatches = raw.match(/[a-z]/gi) || [];
+  const alphaRatio = alphaMatches.length / Math.max(raw.length, 1);
+  if (alphaRatio < 0.4) return true;
+
+  const tokens = tokenize(raw);
+  const uniqueTokenCount = new Set(tokens).size;
+
+  // Repeated same token/character patterns are treated as gibberish.
+  if (uniqueTokenCount <= 1 && tokens.length <= 3) return true;
+  if (/^(.)\1{4,}$/i.test(raw.replace(/\s+/g, ''))) return true;
+
+  return false;
+};
+
+const heuristicFallbackAnalysis = (question, answer) => {
+  const answerText = String(answer || '').trim();
+  const questionTokens = tokenize(question);
+  const answerTokens = tokenize(answerText);
+  const answerTokenSet = new Set(answerTokens);
+
+  const overlap = questionTokens.filter((token) => answerTokenSet.has(token)).length;
+  const relevanceRatio = questionTokens.length > 0 ? overlap / questionTokens.length : 0;
+  const uniqueWords = new Set(answerTokens).size;
+  const sentenceCount = answerText.split(/[.!?]+/).filter((s) => s.trim().length > 0).length || 1;
+  const avgSentenceLength = answerTokens.length / sentenceCount;
+
+  // Clarity: reward structure and readable sentence length
+  const structureBonus = sentenceCount >= 2 ? 8 : 0;
+  const sentenceLengthPenalty = avgSentenceLength > 30 ? -8 : avgSentenceLength < 5 ? -10 : 0;
+  let clarity = normalizeScore(45 + Math.min(30, uniqueWords * 0.9) + structureBonus + sentenceLengthPenalty);
+
+  // Confidence: reduce for hedging language; improve for decisive wording
+  const lowerAnswer = answerText.toLowerCase();
+  const hedgeMatches = (lowerAnswer.match(/\b(maybe|might|perhaps|i think|not sure|possibly|guess)\b/g) || []).length;
+  const assertiveMatches = (lowerAnswer.match(/\b(will|must|can|deliver|implemented|built|solved|improved|led)\b/g) || []).length;
+  let confidence = normalizeScore(55 + assertiveMatches * 4 - hedgeMatches * 6 + Math.min(10, sentenceCount * 2));
+
+  // Applicability: mainly based on semantic overlap with the question and adequate detail
+  const detailBonus = answerTokens.length >= 20 ? 10 : answerTokens.length >= 10 ? 5 : 0;
+  let applicability = normalizeScore(20 + relevanceRatio * 65 + detailBonus);
+
+  // If response is likely off-topic, force stricter low scoring.
+  const isLikelyOffTopic = relevanceRatio < 0.12 || answerTokens.length < 4;
+  if (isLikelyOffTopic) {
+    applicability = Math.min(applicability, 20);
+    clarity = Math.min(clarity, 35);
+    confidence = Math.min(confidence, 35);
+  }
+
+  return {
+    clarity,
+    confidence,
+    applicability,
+    strengths: isLikelyOffTopic
+      ? ['You attempted an answer and can improve with better question focus.']
+      : [
+          sentenceCount >= 2 ? 'Your answer has a clear multi-sentence structure.' : 'Your answer is concise and direct.',
+          relevanceRatio >= 0.35 ? 'You addressed key parts of the question.' : 'You attempted to respond to the core question.',
+        ],
+    improvements: isLikelyOffTopic
+      ? [
+          'Your response appears off-topic for this question.',
+          'Address the exact topic asked and include one relevant technical example.',
+        ]
+      : [
+          'Add one concrete example or metric to strengthen credibility.',
+          'Use explicit, decisive phrasing and avoid vague language.',
+        ],
+  };
+};
+
+const parseModelJson = (responseText) => {
+  if (typeof responseText !== 'string') {
+    throw new Error('Invalid model response format');
+  }
+
+  let text = responseText.trim();
+  if (text.includes('```')) {
+    text = text.replace(/```json\n?|\n?```/g, '').trim();
+  }
+  return JSON.parse(text);
+};
+
+const normalizeAnalysis = (analysis, question = '', answer = '') => {
+  const getScore = (obj, key) => obj[key] ?? obj[key.charAt(0).toUpperCase() + key.slice(1)];
+
+  const feedback = typeof analysis.feedback === 'string' && analysis.feedback.trim()
+    ? analysis.feedback.trim()
+    : 'Good effort. Keep practicing!';
+
+  const strengths = Array.isArray(analysis.strengths) && analysis.strengths.length > 0
+    ? analysis.strengths.filter((s) => typeof s === 'string' && s.trim()).slice(0, 3)
+    : [];
+
+  const improvements = Array.isArray(analysis.improvements) && analysis.improvements.length > 0
+    ? analysis.improvements.filter((i) => typeof i === 'string' && i.trim()).slice(0, 3)
+    : [];
+
+  const questionTokens = tokenize(question);
+  const answerTokens = tokenize(answer);
+  const answerTokenSet = new Set(answerTokens);
+  const overlap = questionTokens.filter((token) => answerTokenSet.has(token)).length;
+  const relevanceRatio = questionTokens.length > 0 ? overlap / questionTokens.length : 0;
+  const likelyOffTopic = relevanceRatio < 0.12 || answerTokens.length < 4;
+
+  let clarity = normalizeScore(getScore(analysis, 'clarity'));
+  let confidence = normalizeScore(getScore(analysis, 'confidence'));
+  let applicability = normalizeScore(getScore(analysis, 'applicability'));
+
+  if (likelyOffTopic) {
+    applicability = Math.min(applicability, 25);
+    clarity = Math.min(clarity, 45);
+    confidence = Math.min(confidence, 45);
+  }
+
+  return {
+    clarity,
+    confidence,
+    applicability,
+    feedback,
+    strengths,
+    improvements,
+  };
+};
+
+const analyzeWithGemini = async (prompt, question, answer) => {
+  const geminiApiKey = getGeminiApiKey();
+  if (!geminiApiKey) {
+    throw new Error('Gemini API key is missing');
+  }
+
+  const model = getGeminiModel();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    model
+  )}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+
+  const response = await axios.post(
+    url,
+    {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        responseMimeType: 'application/json',
+      },
+    },
+    {
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+
+  const text =
+    response?.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    response?.data?.candidates?.[0]?.content?.parts?.find((p) => typeof p?.text === 'string')?.text;
+
+  if (!text) {
+    throw new Error('Gemini returned empty response');
+  }
+
+  const analysis = parseModelJson(text);
+  return normalizeAnalysis(analysis, question, answer);
+};
+
 /**
  * Analyze interview answer using GPT-4
  * Process:
@@ -82,7 +279,22 @@ const normalizeScore = (score) => {
  * @returns {Promise<Object>} - Analysis results with normalized scores and feedback
  */
 const analyzeAnswer = async (question, answer) => {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = getApiKey();
+
+  if (isMeaninglessAnswer(answer)) {
+    return {
+      clarity: 0,
+      confidence: 0,
+      applicability: 0,
+      feedback: 'Your answer appears meaningless or too short. Provide a clear, relevant response to receive a score.',
+      strengths: [],
+      improvements: [
+        'Write a complete answer with meaningful words and at least one clear idea.',
+        'Address the question directly instead of random letters or filler text.',
+      ],
+    };
+  }
+
   if (!apiKey || apiKey.trim() === '' || apiKey === 'your_openai_api_key_here') {
     console.error('OpenAI API key not set. Add OPENAI_API_KEY to server/.env');
     return {
@@ -137,6 +349,21 @@ const analyzeAnswer = async (question, answer) => {
 3. Provide constructive feedback (2-3 sentences)
 4. Identify 2-3 specific strengths
 5. Identify 2-3 specific areas for improvement
+6. Grade by semantic meaning, not exact keyword match:
+   - Treat paraphrases, synonyms, and equivalent phrasing as correct when intent matches.
+   - Do NOT unfairly penalize answers that use different wording from common textbook responses.
+7. Applicability should reflect answer correctness + relevance:
+   - High score when the response directly answers the question with accurate, job-relevant content.
+   - Lower score when the response is vague, partially correct, or off-topic.
+8. Confidence scoring rule for text answers:
+   - Infer confidence from language quality (decisive wording, clear rationale, ownership, and consistency).
+   - Do not over-penalize for missing vocal cues (tone/volume are unavailable in plain text).
+9. Keep scores calibrated:
+   - 85-100 = excellent and complete
+   - 70-84 = strong but missing minor depth/detail
+   - 50-69 = partially correct or somewhat unclear
+   - 0-49 = mostly incorrect, unclear, or off-topic
+10. Ensure all scores are integers from 0 to 100.
 
 **REQUIRED JSON FORMAT:**
 {
@@ -150,91 +377,52 @@ const analyzeAnswer = async (question, answer) => {
 
 Return ONLY the JSON object, no additional text or explanation.`;
 
-    // Step 1: Send to GPT-4 API
+    // Prefer Gemini if key exists, otherwise use OpenAI.
+    if (getGeminiApiKey()) {
+      return await analyzeWithGemini(prompt, question, answer);
+    }
+
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4', // Using GPT-4 for better analysis
+      model: getModel(),
       messages: [
         {
           role: 'system',
-          content: 'You are an expert interview coach. Analyze interview answers according to the provided rubric. Always respond with valid JSON only, no additional text.',
+          content: 'You are an expert interview coach. Score answers fairly by semantic meaning (including paraphrases and similar answers), not exact wording. Always respond with valid JSON only, no additional text.',
         },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      temperature: 0.7,
+      temperature: 0.3,
       max_tokens: 600,
-      response_format: { type: "json_object" }, // Ensure JSON output
+      response_format: { type: "json_object" },
     });
 
-    // Step 3: Parse GPT-4 JSON response
-    let responseText = completion.choices[0].message.content;
-    
-    if (typeof responseText !== 'string') {
-      throw new Error('Invalid response format from OpenAI');
-    }
-    
-    responseText = responseText.trim();
-    
-    // Remove markdown code blocks if present
-    if (responseText.includes('```')) {
-      responseText = responseText.replace(/```json\n?|\n?```/g, '').trim();
-    }
-
-    let analysis;
-    try {
-      analysis = JSON.parse(responseText);
-    } catch (jsonError) {
-      console.error('Failed to parse GPT-4 response as JSON:', responseText, jsonError);
-      throw new Error('Failed to parse AI response');
-    }
-
-    // Step 4: Normalize scores (ensure 0-100 range); handle different key casing from API
-    const getScore = (obj, key) => obj[key] ?? obj[key.charAt(0).toUpperCase() + key.slice(1)];
-    const normalizedScores = {
-      clarity: normalizeScore(getScore(analysis, 'clarity')),
-      confidence: normalizeScore(getScore(analysis, 'confidence')),
-      applicability: normalizeScore(getScore(analysis, 'applicability')),
-    };
-
-    // Validate feedback fields
-    const feedback = typeof analysis.feedback === 'string' && analysis.feedback.trim()
-      ? analysis.feedback.trim()
-      : 'Good effort. Keep practicing!';
-
-    // Validate arrays
-    const strengths = Array.isArray(analysis.strengths) && analysis.strengths.length > 0
-      ? analysis.strengths.filter(s => typeof s === 'string' && s.trim()).slice(0, 3)
-      : [];
-
-    const improvements = Array.isArray(analysis.improvements) && analysis.improvements.length > 0
-      ? analysis.improvements.filter(i => typeof i === 'string' && i.trim()).slice(0, 3)
-      : [];
-
-    return {
-      ...normalizedScores,
-      feedback,
-      strengths,
-      improvements,
-    };
+    const responseText = completion.choices[0].message.content;
+    const analysis = parseModelJson(responseText);
+    return normalizeAnalysis(analysis, question, answer);
   } catch (error) {
     console.error('OpenAI GPT-4 API Error:', error?.message || error);
 
     // Fallback scores if API fails (e.g. network, rate limit, invalid key)
     const reason = error?.message || '';
     const isAuth = reason.includes('401') || reason.includes('Incorrect API key') || reason.includes('invalid_api_key');
+    const isQuota = reason.includes('429') || reason.toLowerCase().includes('quota');
+    const fallback = heuristicFallbackAnalysis(question, answer);
     const feedback = isAuth
-      ? 'OpenAI API key is invalid or missing. Add a valid key to server/.env (OPENAI_API_KEY=sk-...) to enable analysis.'
-      : 'Unable to analyze answer at this time. Please try again. Check the server console for details.';
+      ? 'Good effort. Keep practicing and keep your answers focused on the question.'
+      : isQuota
+        ? 'Good effort. Keep practicing and add one concrete example to strengthen your answer.'
+        : 'Good effort. Keep practicing and aim for clear structure with relevant examples.';
 
     return {
-      clarity: normalizeScore(50),
-      confidence: normalizeScore(50),
-      applicability: normalizeScore(50),
+      clarity: fallback.clarity,
+      confidence: fallback.confidence,
+      applicability: fallback.applicability,
       feedback,
-      strengths: [],
-      improvements: [],
+      strengths: fallback.strengths,
+      improvements: fallback.improvements,
     };
   }
 };

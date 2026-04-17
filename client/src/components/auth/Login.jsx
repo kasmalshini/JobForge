@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const Login = () => {
@@ -9,12 +9,23 @@ const Login = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    role: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [info, setInfo] = useState('');
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const emailVerified = params.get('emailVerified');
+    if (emailVerified === 'success') {
+      setInfo('Email verified successfully. You can now continue using your account.');
+    } else if (emailVerified === 'failed' || emailVerified === 'error') {
+      setInfo('Email verification link is invalid or expired. Please request a new verification email.');
+    }
+  }, [location.search]);
 
   const handleChange = (e) => {
     setFormData({
@@ -27,6 +38,7 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setInfo('');
     setLoading(true);
 
     try {
@@ -65,21 +77,18 @@ const Login = () => {
           setLoading(false);
           return;
         }
-        if (!formData.role) {
-          setError('Please select a role');
-          setLoading(false);
-          return;
-        }
         result = await register(
           formData.fullName,
           formData.email,
           formData.password,
-          formData.confirmPassword,
-          formData.role
+          formData.confirmPassword
         );
       }
 
       if (result.success) {
+        if (!isLogin && result.message) {
+          sessionStorage.setItem('postRegisterNotice', result.message);
+        }
         navigate('/dashboard');
       } else {
         setError(result.message);
@@ -130,27 +139,6 @@ const Login = () => {
                 style={styles.input}
                 required
               />
-              <select
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                style={styles.input}
-                required
-              >
-                <option value="">Select Role (Interview For)</option>
-                <option value="Software Developer">Software Developer</option>
-                <option value="Frontend Developer">Frontend Developer</option>
-                <option value="Backend Developer">Backend Developer</option>
-                <option value="Full Stack Developer">Full Stack Developer</option>
-                <option value="DevOps Engineer">DevOps Engineer</option>
-                <option value="Data Scientist">Data Scientist</option>
-                <option value="Product Manager">Product Manager</option>
-                <option value="UI/UX Designer">UI/UX Designer</option>
-                <option value="QA Engineer">QA Engineer</option>
-                <option value="Project Manager">Project Manager</option>
-                <option value="Business Analyst">Business Analyst</option>
-                <option value="Other">Other</option>
-              </select>
             </>
           )}
           <input
@@ -185,6 +173,7 @@ const Login = () => {
             />
           )}
           {error && <div style={styles.error}>{error}</div>}
+          {info && <div style={styles.info}>{info}</div>}
           <button
             type="submit"
             style={styles.button}
@@ -291,6 +280,14 @@ const styles = {
     textAlign: 'center',
     padding: '10px',
     background: '#fee',
+    borderRadius: '6px',
+  },
+  info: {
+    color: '#1f6f38',
+    fontSize: '14px',
+    textAlign: 'center',
+    padding: '10px',
+    background: '#eef9f2',
     borderRadius: '6px',
   },
   forgotPassword: {

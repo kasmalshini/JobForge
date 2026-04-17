@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import FlashcardDeck from '../components/flashcards/FlashcardDeck';
 
 const FlashcardsPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   return (
@@ -14,7 +16,7 @@ const FlashcardsPage = () => {
         </button>
       </nav>
 
-      {!selectedCategory ? (
+      {selectedCategory === null ? (
         <div style={styles.categorySelection}>
           <h2 style={styles.title}>Choose a Category</h2>
           <div style={styles.categories}>
@@ -40,9 +42,22 @@ const FlashcardsPage = () => {
               </p>
             </div>
 
+            {user?.role && (
+              <div
+                style={styles.categoryCard}
+                onClick={() => setSelectedCategory('role-specific')}
+              >
+                <div style={styles.categoryIcon}>🎯</div>
+                <h3 style={styles.categoryTitle}>Role Specific</h3>
+                <p style={styles.categoryDescription}>
+                  Practice flashcards tailored for {user.role}
+                </p>
+              </div>
+            )}
+
             <div
               style={styles.categoryCard}
-              onClick={() => setSelectedCategory(null)}
+              onClick={() => setSelectedCategory('all')}
             >
               <div style={styles.categoryIcon}>📚</div>
               <h3 style={styles.categoryTitle}>All Flashcards</h3>
@@ -60,7 +75,14 @@ const FlashcardsPage = () => {
           >
             ← Back to Categories
           </button>
-          <FlashcardDeck category={selectedCategory} />
+          <FlashcardDeck
+            category={
+              selectedCategory === 'all' || selectedCategory === 'role-specific'
+                ? null
+                : selectedCategory
+            }
+            role={selectedCategory === 'role-specific' ? user?.role : null}
+          />
         </div>
       )}
     </div>

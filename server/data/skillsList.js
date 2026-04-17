@@ -125,7 +125,6 @@ const ROLES = [
   'UI/UX Designer',
   'QA Engineer',
   'Project Manager',
-  'Business Analyst',
   'Other',
 ];
 

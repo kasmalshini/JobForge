@@ -50,6 +50,7 @@ export const AuthProvider = ({ children }) => {
         email: response.data.email,
         role: response.data.role,
         skills: response.data.skills || [],
+        emailVerified: response.data.emailVerified,
       });
       return { success: true };
     } catch (error) {
@@ -79,8 +80,9 @@ export const AuthProvider = ({ children }) => {
         email: response.data.email,
         role: response.data.role,
         skills: response.data.skills || [],
+        emailVerified: response.data.emailVerified,
       });
-      return { success: true };
+      return { success: true, message: response.data.message };
     } catch (error) {
       let message = 'Registration failed';
       if (error.response?.data?.message) {

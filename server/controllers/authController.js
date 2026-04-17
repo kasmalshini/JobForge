@@ -3,11 +3,22 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const { ROLES, ALL_SKILLS } = require('../data/skillsList');
 const { sendPasswordResetEmail } = require('../services/emailService');
+const { scheduleVerificationEmail } = require('../services/emailQueue');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
+};
+
+const getPrimaryClientUrl = () => {
+  return (process.env.CLIENT_URL || 'http://localhost:3000')
+    .split(',')[0]
+    .trim();
+};
+
+const getApiBaseUrl = (req) => {
+  return process.env.API_BASE_URL || `${req.protocol}://${req.get('host')}`;
 };
 
 // @desc    Register new user
@@ -38,20 +49,40 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerificationToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+
     const user = await User.create({
       fullName,
       email,
       password,
       // role is left as null, will be set during role setup
+      emailVerified: false,
+      emailVerificationToken: hashedVerificationToken,
+      emailVerificationExpire: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      verificationEmailStatus: 'pending',
+      verificationEmailRetryCount: 0,
     });
 
     if (user) {
+      const verifyLink = `${getApiBaseUrl(req)}/api/auth/verify-email/${verificationToken}`;
+      scheduleVerificationEmail({
+        userId: user._id,
+        email: user.email,
+        verificationLink: verifyLink,
+      });
+
       res.status(201).json({
         _id: user._id,
         fullName: user.fullName,
         email: user.email,
         role: user.role, // Will be null for new users
+        emailVerified: user.emailVerified,
         token: generateToken(user._id),
+        message: 'Account created. Verification email will be retried if delivery fails.',
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -89,6 +120,7 @@ const login = async (req, res) => {
         name: displayName, // Keep 'name' for backward compatibility
         email: user.email,
         role: user.role || 'Other',
+        emailVerified: user.emailVerified,
         token: generateToken(user._id),
       });
     } else {
@@ -114,6 +146,7 @@ const getMe = async (req, res) => {
       name: displayName, // Keep 'name' for backward compatibility
       email: user.email,
       role: user.role || 'Other',
+      emailVerified: user.emailVerified,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -216,8 +249,12 @@ const forgotPassword = async (req, res) => {
       resetPasswordExpire,
     }, { runValidators: false });
 
-    // Send email with reset link
-    const resetLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+    // Build reset link from request origin during local dev (e.g. :3001),
+    // otherwise fall back to configured CLIENT_URL.
+    const requestOrigin = req.get('origin');
+    const configuredClientUrl = getPrimaryClientUrl();
+    const clientBaseUrl = requestOrigin || configuredClientUrl;
+    const resetLink = `${clientBaseUrl}/reset-password/${resetToken}`;
 
     try {
       await sendPasswordResetEmail(user.email, resetToken, resetLink);
@@ -228,16 +265,110 @@ const forgotPassword = async (req, res) => {
       });
     } catch (emailError) {
       console.error('Email service error:', emailError);
-      // If email fails, still don't expose the token
-      res.json({
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+      const hasEmailConfig = Boolean(
+        (
+          (process.env.SMTP_HOST || '').trim() &&
+          (process.env.SMTP_USER || '').trim() &&
+          (process.env.SMTP_PASS || '').trim()
+        ) ||
+        (
+          (process.env.GMAIL_EMAIL || '').trim() &&
+          (process.env.GMAIL_PASSWORD || '').trim()
+        )
+      );
+      const fallbackResponse = {
         success: true,
         message: 'If that email exists, a password reset link has been sent.',
-      });
+      };
+
+      // In development, return the reset link for local testing when SMTP is not configured.
+      if (isDevelopment && !hasEmailConfig) {
+        fallbackResponse.message = 'Email delivery is not configured. Use the reset link below for local testing.';
+        fallbackResponse.resetToken = resetToken;
+        fallbackResponse.resetLink = resetLink;
+      }
+
+      res.json(fallbackResponse);
     }
   } catch (error) {
     console.error('Forgot password error:', error);
     const message = (error && error.message) ? error.message : 'Error processing request. Please try again.';
     res.status(500).json({ message });
+  }
+};
+
+// @desc    Verify email token
+// @route   GET /api/auth/verify-email/:token
+// @access  Public
+const verifyEmail = async (req, res) => {
+  try {
+    const rawToken = req.params.token;
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const user = await User.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
+
+    const clientUrl = getPrimaryClientUrl();
+    if (!user) {
+      return res.redirect(`${clientUrl}/login?emailVerified=failed`);
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    user.verificationEmailStatus = 'sent';
+    await user.save();
+
+    return res.redirect(`${clientUrl}/login?emailVerified=success`);
+  } catch (error) {
+    console.error('Verify email error:', error);
+    return res.redirect(`${getPrimaryClientUrl()}/login?emailVerified=error`);
+  }
+};
+
+// @desc    Resend verification email
+// @route   POST /api/auth/resend-verification
+// @access  Private
+const resendVerificationEmail = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.emailVerified) {
+      return res.json({ success: true, message: 'Email is already verified.' });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerificationToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+
+    user.emailVerificationToken = hashedVerificationToken;
+    user.emailVerificationExpire = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    user.verificationEmailStatus = 'pending';
+    await user.save();
+
+    const apiBaseUrl = process.env.API_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const verifyLink = `${apiBaseUrl}/api/auth/verify-email/${verificationToken}`;
+    scheduleVerificationEmail({
+      userId: user._id,
+      email: user.email,
+      verificationLink: verifyLink,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Verification email queued. It will be retried automatically if delivery fails.',
+    });
+  } catch (error) {
+    console.error('Resend verification email error:', error);
+    return res.status(500).json({ message: 'Failed to queue verification email.' });
   }
 };
 
@@ -331,7 +462,17 @@ const deleteAccount = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, updateRoleAndSkills, deleteAccount, forgotPassword, resetPassword };
+module.exports = {
+  register,
+  login,
+  getMe,
+  updateRoleAndSkills,
+  deleteAccount,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
+  resendVerificationEmail,
+};
 
 
 

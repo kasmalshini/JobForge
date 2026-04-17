@@ -1,17 +1,37 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-// Create a transporter using Gmail SMTP
 const createTransporter = () => {
-  if (!process.env.GMAIL_EMAIL || !process.env.GMAIL_PASSWORD) {
-    throw new Error('Gmail credentials are not configured. Set GMAIL_EMAIL and GMAIL_PASSWORD in .env');
+  const smtpHost = (process.env.SMTP_HOST || '').trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = (process.env.SMTP_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || '').trim();
+  const smtpSecure = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
+  const gmailEmail = (process.env.GMAIL_EMAIL || '').trim();
+  const gmailPassword = (process.env.GMAIL_PASSWORD || '').trim();
+  const usingSmtpProvider = Boolean(smtpHost && smtpUser && smtpPass);
+
+  if (usingSmtpProvider) {
+    return nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+    });
+  }
+
+  if (!gmailEmail || !gmailPassword) {
+    throw new Error('Email provider is not configured. Set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS (recommended) or GMAIL_EMAIL/GMAIL_PASSWORD.');
   }
 
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.GMAIL_EMAIL,
-      pass: process.env.GMAIL_PASSWORD,
+      user: gmailEmail,
+      pass: gmailPassword,
     },
   });
 };
@@ -20,9 +40,10 @@ const createTransporter = () => {
 const sendPasswordResetEmail = async (email, resetToken, resetLink) => {
   try {
     const transporter = createTransporter();
+    const fromEmail = (process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.GMAIL_EMAIL || '').trim();
 
     const mailOptions = {
-      from: process.env.GMAIL_EMAIL,
+      from: fromEmail,
       to: email,
       subject: 'Password Reset Request - JobForge',
       html: `
@@ -53,9 +74,10 @@ const sendPasswordResetEmail = async (email, resetToken, resetLink) => {
 const sendVerificationEmail = async (email, verificationLink) => {
   try {
     const transporter = createTransporter();
+    const fromEmail = (process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.GMAIL_EMAIL || '').trim();
 
     const mailOptions = {
-      from: process.env.GMAIL_EMAIL,
+      from: fromEmail,
       to: email,
       subject: 'Verify Your Email - JobForge',
       html: `

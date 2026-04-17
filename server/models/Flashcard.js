@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const flashcardSchema = new mongoose.Schema({
+  role: {
+    type: String,
+    trim: true,
+    default: null,
+  },
   category: {
     type: String,
     required: true,

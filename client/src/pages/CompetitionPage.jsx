@@ -1,29 +1,69 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import RoomLobby from '../components/competition/RoomLobby';
 import InterviewInterface from '../components/interview/InterviewInterface';
 import Leaderboard from '../components/competition/Leaderboard';
 import { getSocket } from '../services/socket';
+import api from '../services/api';
+
+const createRoomId = () => `room-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 const CompetitionPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [roomId, setRoomId] = useState('');
+  const [requiredPlayers, setRequiredPlayers] = useState(4);
   const [status, setStatus] = useState('lobby'); // lobby, waiting, active, completed
   const [competitionComplete, setCompetitionComplete] = useState(false);
   const [rankings, setRankings] = useState(null);
 
   useEffect(() => {
-    // Generate or use existing room ID
+    let isMounted = true;
+
+    const initializeRoom = async () => {
+    const params = new URLSearchParams(location.search);
+    const invitedRoomId = params.get('roomId');
+    const autoJoin = params.get('autoJoin') === '1';
+
+    if (invitedRoomId) {
+      if (!isMounted) return;
+      setRoomId(invitedRoomId);
+      localStorage.setItem('competitionRoomId', invitedRoomId);
+      if (autoJoin) setStatus('waiting');
+      return;
+    }
+
     const storedRoomId = localStorage.getItem('competitionRoomId');
-    if (storedRoomId) {
-      setRoomId(storedRoomId);
-    } else {
-      const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    if (!storedRoomId) {
+      const newRoomId = createRoomId();
+      if (!isMounted) return;
       setRoomId(newRoomId);
       localStorage.setItem('competitionRoomId', newRoomId);
+      return;
     }
+
+    let roomIdToUse = storedRoomId;
+    try {
+      const response = await api.get(`/rooms/${storedRoomId}`);
+      const roomStatus = response?.data?.room?.status;
+      if (roomStatus && roomStatus !== 'waiting') {
+        roomIdToUse = createRoomId();
+        localStorage.setItem('competitionRoomId', roomIdToUse);
+      }
+    } catch (error) {
+      // Missing/invalid room IDs are treated as stale and replaced.
+      roomIdToUse = createRoomId();
+      localStorage.setItem('competitionRoomId', roomIdToUse);
+    }
+
+    if (!isMounted) return;
+    setRoomId(roomIdToUse);
+    if (autoJoin) setStatus('waiting');
+  };
+
+    initializeRoom();
 
     const socket = getSocket();
     if (socket) {
@@ -48,13 +88,14 @@ const CompetitionPage = () => {
     }
 
     return () => {
+      isMounted = false;
       if (socket) {
         socket.off('competition-completed');
         socket.off('competition-started');
         socket.off('room-updated');
       }
     };
-  }, []);
+  }, [location.search]);
 
   const handleJoinRoom = () => {
     if (roomId) {
@@ -73,9 +114,15 @@ const CompetitionPage = () => {
           <h2 style={styles.completeTitle}>Competition Complete! 🎉</h2>
           <div style={styles.rankings}>
             <h3 style={styles.rankingsTitle}>Final Rankings</h3>
-            {rankings.map((entry, index) => (
+            {rankings.map((entry, index) => {
+              const entryUserId =
+                entry.userId && typeof entry.userId === 'object'
+                  ? entry.userId._id
+                  : entry.userId;
+              const isYou = String(entryUserId) === String(user._id);
+              return (
               <div
-                key={entry.userId}
+                key={String(entryUserId ?? index)}
                 style={{
                   ...styles.rankingEntry,
                   ...(index === 0 ? styles.firstPlace : {}),
@@ -89,15 +136,16 @@ const CompetitionPage = () => {
                 </div>
                 <div style={styles.rankingInfo}>
                   <div style={styles.rankingName}>
-                    {entry.userId === user._id ? 'You' : (entry.userName || 'Player')}
+                    {isYou ? 'You' : (entry.userName || 'Player')}
                   </div>
-                  <div style={styles.rankingScore}>Score: {entry.totalScore}/100</div>
-                  {entry.userId === user._id && (
+                  <div style={styles.rankingScore}>Score: {entry.totalScore}/10</div>
+                  {isYou && (
                     <div style={styles.youBadge}>Your Result</div>
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
           <button
             onClick={() => {
@@ -125,8 +173,31 @@ const CompetitionPage = () => {
         <div style={styles.lobbyContainer}>
           <h2 style={styles.lobbyTitle}>Join Competition</h2>
           <p style={styles.lobbyDescription}>
-            Compete with other users in real-time! When 4 players join, the competition will start.
+            Compete in real time. Choose a 2- or 4-player match; when the room is full, everyone
+            enters the interview and answers the same questions. There are 10 questions total:
+            each correct answer gives 1 point, and each wrong answer gives 0 points.
           </p>
+          <div style={styles.sizeRow} role="group" aria-label="Match size">
+            <span style={styles.sizeLabel}>Match size:</span>
+            <label style={styles.sizeOption}>
+              <input
+                type="radio"
+                name="matchSize"
+                checked={requiredPlayers === 2}
+                onChange={() => setRequiredPlayers(2)}
+              />
+              2 players
+            </label>
+            <label style={styles.sizeOption}>
+              <input
+                type="radio"
+                name="matchSize"
+                checked={requiredPlayers === 4}
+                onChange={() => setRequiredPlayers(4)}
+              />
+              4 players
+            </label>
+          </div>
           <div style={styles.roomInputContainer}>
             <input
               type="text"
@@ -151,6 +222,7 @@ const CompetitionPage = () => {
             roomId={roomId}
             userId={user._id}
             userName={user.name}
+            requiredPlayers={requiredPlayers}
             onCompetitionStart={handleCompetitionStart}
           />
         </div>
@@ -214,8 +286,30 @@ const styles = {
   lobbyDescription: {
     fontSize: 'clamp(14px, 2.2vw, 16px)',
     color: '#666',
-    marginBottom: '30px',
+    marginBottom: '20px',
     lineHeight: '1.6',
+    textAlign: 'left',
+  },
+  sizeRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '16px',
+    marginBottom: '24px',
+    justifyContent: 'center',
+  },
+  sizeLabel: {
+    fontWeight: 'bold',
+    color: '#333',
+    fontSize: '15px',
+  },
+  sizeOption: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    fontSize: '15px',
+    color: '#444',
   },
   roomInputContainer: {
     display: 'flex',

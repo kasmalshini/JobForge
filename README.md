@@ -56,7 +56,7 @@ npm run dev
 Client (port 3000):
 ```bash
 cd client
-npm start
+npm run dev
 ```
 
 ## Project Structure
@@ -74,6 +74,7 @@ JobForge/
 - `MONGODB_URI`: MongoDB connection string
 - `JWT_SECRET`: Secret key for JWT tokens
 - `OPENAI_API_KEY`: OpenAI API key for answer analysis
+- `ASSEMBLYAI_API_KEY`: AssemblyAI API key for speech analysis
 - `CLIENT_URL`: Frontend URL for CORS
 - `GOOGLE_APPLICATION_CREDENTIALS`: (Optional) Path to Google Cloud service account JSON for Speech-to-Text (e.g. `./google-credentials.json`)
 

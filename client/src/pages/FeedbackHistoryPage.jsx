@@ -8,6 +8,16 @@ const FeedbackHistoryPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState(null);
 
+  const normalizeFeedbackItems = (value) => {
+    if (Array.isArray(value)) {
+      return value.filter((item) => typeof item === 'string' && item.trim().length > 0);
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return [value.trim()];
+    }
+    return [];
+  };
+
   useEffect(() => {
     fetchInterviews();
   }, []);
@@ -142,16 +152,24 @@ const FeedbackHistoryPage = () => {
                   <p>{selectedInterview.feedback}</p>
                 </div>
               )}
-              {selectedInterview.strengths && (
+              {normalizeFeedbackItems(selectedInterview.strengths).length > 0 && (
                 <div style={styles.modalStrengths}>
                   <h4>✅ Strengths</h4>
-                  <p>{selectedInterview.strengths}</p>
+                  <ul style={styles.feedbackList}>
+                    {normalizeFeedbackItems(selectedInterview.strengths).map((item, index) => (
+                      <li key={`history-strength-${index}`} style={styles.feedbackListItem}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
-              {selectedInterview.improvements && (
+              {normalizeFeedbackItems(selectedInterview.improvements).length > 0 && (
                 <div style={styles.modalImprovements}>
                   <h4>💡 Areas for Improvement</h4>
-                  <p>{selectedInterview.improvements}</p>
+                  <ul style={styles.feedbackList}>
+                    {normalizeFeedbackItems(selectedInterview.improvements).map((item, index) => (
+                      <li key={`history-improvement-${index}`} style={styles.feedbackListItem}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
@@ -376,6 +394,17 @@ const styles = {
     padding: '20px',
     background: '#fff7ed',
     borderRadius: '8px',
+  },
+  feedbackList: {
+    margin: 0,
+    paddingLeft: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  feedbackListItem: {
+    color: '#333',
+    lineHeight: '1.6',
   },
 };
 

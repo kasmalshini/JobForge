@@ -1,9 +1,10 @@
 const rateLimit = require('express-rate-limit');
+const isDevelopment = process.env.NODE_ENV !== 'production';
 
 // General rate limiter: 100 requests per 15 minutes
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: isDevelopment ? 60 * 1000 : 15 * 60 * 1000,
+  max: isDevelopment ? 1000 : 100,
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -19,8 +20,9 @@ const openaiLimiter = rateLimit({
 
 // Auth endpoints limiter: 5 attempts per 15 minutes
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
+  // Keep strict limits in production, but allow faster local testing.
+  windowMs: isDevelopment ? 60 * 1000 : 15 * 60 * 1000,
+  max: isDevelopment ? 100 : 5,
   message: 'Too many login attempts from this IP, please try again later.',
   skipSuccessfulRequests: true, // Only count failed attempts
 });

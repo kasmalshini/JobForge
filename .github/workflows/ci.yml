@@ -1,4 +1,4 @@
-name: JobForge CI/CD Pipeline
+ sename: JobForge CI/CD Pipeline
 
 on:
   push:

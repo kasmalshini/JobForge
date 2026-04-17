@@ -132,7 +132,7 @@ const analyzeInterviewAnswer = async (req, res) => {
         roomId,
         userId,
         interviewId: interview._id,
-        totalScore: combinedScore,
+        totalScore: 0,
       });
     }
 
@@ -261,7 +261,7 @@ const analyzeVoiceAnswer = async (req, res) => {
         roomId,
         userId,
         interviewId: interview._id,
-        totalScore: combinedScore,
+        totalScore: 0,
       });
     }
 

@@ -22,7 +22,6 @@ const RoleSkillsSelectionPage = () => {
     'UI/UX Designer',
     'QA Engineer',
     'Project Manager',
-    'Business Analyst',
   ];
 
   const skillsByCategory = {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import SpeechRecognitionService from '../../services/speechRecognition';
 import { isGoogleSpeechAvailable, transcribeAudio } from '../../services/googleSpeech';
 
-const VoiceRecorder = ({ onTranscriptChange, onAnswerSubmit, disabled }) => {
+const VoiceRecorder = ({ onTranscriptChange, onAnswerSubmit, disabled, resetKey }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [useGoogleSpeech, setUseGoogleSpeech] = useState(false);
@@ -37,6 +37,18 @@ const VoiceRecorder = ({ onTranscriptChange, onAnswerSubmit, disabled }) => {
       }
     };
   }, [onTranscriptChange]);
+
+  useEffect(() => {
+    // Clear recorder state whenever parent advances to a new question.
+    speechService.current.stop();
+    setIsRecording(false);
+    setTranscribing(false);
+    chunksRef.current = [];
+    setTranscript('');
+    if (onTranscriptChange) {
+      onTranscriptChange('');
+    }
+  }, [resetKey, onTranscriptChange]);
 
   const handleStartRecording = async () => {
     if (isRecording) return;

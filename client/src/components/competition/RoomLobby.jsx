@@ -1,30 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { connectSocket, getSocket } from '../../services/socket';
+import { connectSocket } from '../../services/socket';
 import { getToken } from '../../utils/token';
+import api from '../../services/api';
 
-const RoomLobby = ({ roomId, userId, userName, onCompetitionStart }) => {
+const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitionStart }) => {
   const [users, setUsers] = useState([]);
   const [status, setStatus] = useState('waiting');
-  const [socket, setSocket] = useState(null);
+  const [, setSocket] = useState(null);
+  const [maxPlayers, setMaxPlayers] = useState(requiredPlayers);
+  const [inviteTarget, setInviteTarget] = useState('');
+  const [inviteStatus, setInviteStatus] = useState('');
+  const [inviting, setInviting] = useState(false);
+
+  useEffect(() => {
+    setMaxPlayers(requiredPlayers);
+  }, [requiredPlayers]);
 
   useEffect(() => {
     const token = getToken();
     const sock = connectSocket(token);
     setSocket(sock);
 
-    sock.on('connect', () => {
-      sock.emit('join-room', { userId, userName, roomId });
-    });
+    const emitJoinRoom = () => {
+      sock.emit('join-room', { userId, userName, roomId, requiredPlayers });
+    };
+
+    sock.on('connect', emitJoinRoom);
+    if (sock.connected) {
+      emitJoinRoom();
+    }
 
     sock.on('joined-room', (data) => {
       setUsers(data.users);
       setStatus(data.status);
+      if (data.requiredPlayers) setMaxPlayers(data.requiredPlayers);
     });
 
     sock.on('room-updated', (data) => {
       setUsers(data.users || []);
       setStatus(data.status || 'waiting');
-      // Real-time user count updates
+      if (data.requiredPlayers != null) setMaxPlayers(data.requiredPlayers);
+      if (data.maxUsers != null) setMaxPlayers(data.maxUsers);
     });
 
     sock.on('competition-started', (data) => {
@@ -39,13 +55,37 @@ const RoomLobby = ({ roomId, userId, userName, onCompetitionStart }) => {
     });
 
     return () => {
-      sock.off('connect');
+      sock.off('connect', emitJoinRoom);
       sock.off('joined-room');
       sock.off('room-updated');
       sock.off('competition-started');
       sock.off('error');
     };
-  }, [roomId, userId, userName, onCompetitionStart]);
+  }, [roomId, userId, userName, requiredPlayers, onCompetitionStart]);
+
+  const handleInvite = async () => {
+    const rawTarget = inviteTarget.trim();
+    if (!rawTarget) {
+      setInviteStatus('Enter an email or user ID to send invite.');
+      return;
+    }
+
+    try {
+      setInviting(true);
+      setInviteStatus('');
+      const looksLikeEmail = rawTarget.includes('@');
+      const response = await api.post(`/rooms/${roomId}/invite`, {
+        ...(looksLikeEmail ? { email: rawTarget } : { userId: rawTarget }),
+      });
+      setInviteStatus(response.data?.message || 'Invite sent successfully.');
+      setInviteTarget('');
+    } catch (error) {
+      const apiMessage = error.response?.data?.message;
+      setInviteStatus(apiMessage || 'Unable to send invite right now.');
+    } finally {
+      setInviting(false);
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -57,7 +97,9 @@ const RoomLobby = ({ roomId, userId, userName, onCompetitionStart }) => {
           {status === 'waiting' && (
             <>
               <div style={styles.spinner} />
-              <span>Waiting for players... ({users.length}/4)</span>
+              <span>
+                Waiting for players... ({users.length}/{maxPlayers})
+              </span>
             </>
           )}
           {status === 'active' && (
@@ -80,7 +122,7 @@ const RoomLobby = ({ roomId, userId, userName, onCompetitionStart }) => {
               <div style={styles.userName}>{user.name || 'Unknown'}</div>
             </div>
           ))}
-          {Array.from({ length: 4 - users.length }).map((_, index) => (
+          {Array.from({ length: Math.max(0, maxPlayers - users.length) }).map((_, index) => (
             <div key={`empty-${index}`} style={styles.userCardEmpty}>
               <div style={styles.userAvatarEmpty}>?</div>
               <div style={styles.userNameEmpty}>Waiting...</div>
@@ -91,8 +133,33 @@ const RoomLobby = ({ roomId, userId, userName, onCompetitionStart }) => {
 
       {status === 'waiting' && (
         <p style={styles.waitingText}>
-          Need {4 - users.length} more {4 - users.length === 1 ? 'player' : 'players'} to start
+          Need {Math.max(0, maxPlayers - users.length)} more{' '}
+          {Math.max(0, maxPlayers - users.length) === 1 ? 'player' : 'players'} to start
         </p>
+      )}
+
+      {status === 'waiting' && (
+        <div style={styles.inviteSection}>
+          <h4 style={styles.inviteTitle}>Invite a player</h4>
+          <div style={styles.inviteRow}>
+            <input
+              type="text"
+              value={inviteTarget}
+              onChange={(e) => setInviteTarget(e.target.value)}
+              placeholder="Enter player's email or user ID"
+              style={styles.inviteInput}
+            />
+            <button
+              type="button"
+              onClick={handleInvite}
+              disabled={inviting}
+              style={styles.inviteButton}
+            >
+              {inviting ? 'Sending...' : 'Send Invite'}
+            </button>
+          </div>
+          {!!inviteStatus && <p style={styles.inviteStatus}>{inviteStatus}</p>}
+        </div>
       )}
     </div>
   );
@@ -214,6 +281,44 @@ const styles = {
   activeIcon: {
     fontSize: '24px',
     marginRight: '5px',
+  },
+  inviteSection: {
+    marginTop: '24px',
+    borderTop: '1px solid #e7e7e7',
+    paddingTop: '16px',
+  },
+  inviteTitle: {
+    margin: '0 0 10px 0',
+    color: '#333',
+    fontSize: '16px',
+  },
+  inviteRow: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
+  },
+  inviteInput: {
+    flex: 1,
+    minWidth: '220px',
+    border: '1px solid #d5d5d5',
+    borderRadius: '8px',
+    padding: '10px',
+    fontSize: '14px',
+  },
+  inviteButton: {
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 16px',
+    background: 'linear-gradient(135deg, #238845 0%, #000 100%)',
+    color: 'white',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '14px',
+  },
+  inviteStatus: {
+    marginTop: '10px',
+    fontSize: '13px',
+    color: '#444',
   },
 };
 

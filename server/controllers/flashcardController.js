@@ -5,11 +5,15 @@ const Flashcard = require('../models/Flashcard');
 // @access  Public (or Private if needed)
 const getFlashcards = async (req, res) => {
   try {
-    const { category, difficulty } = req.query;
+    const { category, difficulty, role } = req.query;
     const query = {};
 
     if (category) {
       query.category = category;
+      // Keep category decks generic unless a specific role is requested.
+      if (!role) {
+        query.role = null;
+      }
     }
 
     if (difficulty) {
@@ -17,6 +21,10 @@ const getFlashcards = async (req, res) => {
         return res.status(400).json({ message: 'Difficulty must be easy, medium, or hard' });
       }
       query.difficulty = difficulty;
+    }
+
+    if (role && typeof role === 'string' && role.trim()) {
+      query.role = role.trim();
     }
 
     const flashcards = await Flashcard.find(query).sort({ createdAt: -1 });

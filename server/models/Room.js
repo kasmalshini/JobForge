@@ -21,6 +21,12 @@ const roomSchema = new mongoose.Schema({
     enum: ['waiting', 'active', 'completed'],
     default: 'waiting',
   },
+  /** How many players must join before the interview starts (2 or 4). */
+  requiredPlayers: {
+    type: Number,
+    enum: [2, 4],
+    default: 4,
+  },
   questions: [
     {
       question: String,

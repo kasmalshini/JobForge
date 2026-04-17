@@ -2,6 +2,19 @@ import React from 'react';
 import { useSpring, animated } from '@react-spring/web';
 
 const ScoreDisplay = ({ scores, feedback, strengths, improvements, isVisible }) => {
+  const normalizeFeedbackItems = (value) => {
+    if (Array.isArray(value)) {
+      return value.filter((item) => typeof item === 'string' && item.trim().length > 0);
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return [value.trim()];
+    }
+    return [];
+  };
+
+  const strengthItems = normalizeFeedbackItems(strengths);
+  const improvementItems = normalizeFeedbackItems(improvements);
+
   const springs = useSpring({
     opacity: isVisible ? 1 : 0,
     transform: isVisible ? 'scale(1)' : 'scale(0.9)',
@@ -114,18 +127,26 @@ const ScoreDisplay = ({ scores, feedback, strengths, improvements, isVisible }) 
           <h4 style={styles.feedbackTitle}>📝 Overall Feedback</h4>
           <p style={styles.feedbackText}>{feedback}</p>
           
-          {(strengths || improvements) && (
+          {(strengthItems.length > 0 || improvementItems.length > 0) && (
             <div style={styles.detailedFeedback}>
-              {strengths && (
+              {strengthItems.length > 0 && (
                 <div style={styles.feedbackSection}>
                   <h5 style={styles.feedbackSectionTitle}>✅ Strengths</h5>
-                  <p style={styles.feedbackSectionText}>{strengths}</p>
+                  <ul style={styles.feedbackList}>
+                    {strengthItems.map((item, index) => (
+                      <li key={`strength-${index}`} style={styles.feedbackListItem}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
-              {improvements && (
+              {improvementItems.length > 0 && (
                 <div style={styles.feedbackSection}>
                   <h5 style={styles.feedbackSectionTitle}>💡 Areas for Improvement</h5>
-                  <p style={styles.feedbackSectionText}>{improvements}</p>
+                  <ul style={styles.feedbackList}>
+                    {improvementItems.map((item, index) => (
+                      <li key={`improvement-${index}`} style={styles.feedbackListItem}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
@@ -260,6 +281,18 @@ const styles = {
     color: '#666',
     lineHeight: '1.6',
     margin: 0,
+  },
+  feedbackList: {
+    margin: 0,
+    paddingLeft: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  feedbackListItem: {
+    fontSize: '14px',
+    color: '#666',
+    lineHeight: '1.6',
   },
 };
 

@@ -39,6 +39,7 @@ MONGODB_URI=mongodb://localhost:27017/jobforge
 JWT_SECRET=your_super_secret_jwt_key_here
 JWT_EXPIRES_IN=7d
 OPENAI_API_KEY=your_openai_api_key_here
+ASSEMBLYAI_API_KEY=your_assemblyai_api_key_here
 CLIENT_URL=http://localhost:3000
 NODE_ENV=development
 ```
@@ -65,7 +66,7 @@ npm run dev
 **Terminal 2 - Start Client:**
 ```bash
 cd client
-npm start
+npm run dev
 ```
 
 The application will be available at:

@@ -8,9 +8,24 @@ const INTERVIEW_QUESTIONS = [
   "What are your greatest strengths?",
   "Why do you want to work here?",
   "Where do you see yourself in 5 years?",
+  "What is your biggest weakness?",
+  "Tell me about a challenging project you worked on.",
+  "How do you handle stress and pressure?",
+  "Why should we hire you?",
+  "Describe a time you failed and what you learned from it.",
+  "How do you handle conflict with a coworker?",
 ];
 
+const TOTAL_COMPETITION_QUESTIONS = INTERVIEW_QUESTIONS.length;
+
 let activeRooms = new Map(); // roomId -> { users: [], status: 'waiting'|'active'|'completed' }
+let ioInstance = null;
+
+const normalizeRequiredPlayers = (value) => {
+  const n = Number(value);
+  if (n === 2 || n === 4) return n;
+  return 4;
+};
 
 // Verify JWT token from socket handshake
 const verifyToken = async (socket) => {
@@ -35,6 +50,8 @@ const verifyToken = async (socket) => {
 };
 
 const socketService = (io) => {
+  ioInstance = io;
+
   // Middleware to authenticate socket connections
   io.use(async (socket, next) => {
     const verification = await verifyToken(socket);
@@ -49,6 +66,7 @@ const socketService = (io) => {
 
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id, 'User ID:', socket.user._id);
+    socket.join(`user:${socket.user._id.toString()}`);
 
     // Join room
     socket.on('join-room', async (data) => {
@@ -59,32 +77,46 @@ const socketService = (io) => {
           return;
         }
 
-        const { userId, userName, roomId } = data;
+        const { userId, userName, roomId, requiredPlayers: requiredPlayersRaw } = data;
+        const requestedPlayers = normalizeRequiredPlayers(requiredPlayersRaw);
 
         // Find or create room
         let room = await Room.findOne({ roomId, status: { $in: ['waiting', 'active'] } });
 
         if (!room) {
-          // Create new room
           room = await Room.create({
             roomId,
             users: [{ userId, name: userName, socketId: socket.id }],
             status: 'waiting',
+            requiredPlayers: requestedPlayers,
             questions: INTERVIEW_QUESTIONS.map((q, i) => ({ question: q, order: i })),
           });
         } else {
-          // Add user to existing room
-          if (room.users.length < 4 && !room.users.find((u) => u.userId.toString() === userId)) {
+          const rp = room.requiredPlayers ?? 4;
+          if (
+            requiredPlayersRaw != null &&
+            normalizeRequiredPlayers(requiredPlayersRaw) !== rp
+          ) {
+            socket.emit('error', {
+              message:
+                'This room was created for a different match size. Use the same 2- or 4-player setting.',
+            });
+            return;
+          }
+          if (room.users.length < rp && !room.users.find((u) => u.userId.toString() === userId)) {
             room.users.push({ userId, name: userName, socketId: socket.id });
             await room.save();
           }
         }
+
+        const maxUsers = room.requiredPlayers ?? 4;
 
         socket.join(roomId);
         activeRooms.set(roomId, {
           users: room.users,
           status: room.status,
           currentQuestionIndex: 0,
+          requiredPlayers: maxUsers,
         });
 
         // Real-time room updates: Notify all users in room
@@ -93,11 +125,12 @@ const socketService = (io) => {
           status: room.status,
           roomId,
           userCount: room.users.length,
-          maxUsers: 4,
+          maxUsers,
+          requiredPlayers: maxUsers,
         });
 
-        // If 4 users joined, start the competition
-        if (room.users.length === 4 && room.status === 'waiting') {
+        // When enough players join, start the interview
+        if (room.users.length === maxUsers && room.status === 'waiting') {
           room.status = 'active';
           room.startedAt = new Date();
           await room.save();
@@ -121,6 +154,7 @@ const socketService = (io) => {
           roomId,
           users: room.users,
           status: room.status,
+          requiredPlayers: maxUsers,
         });
       } catch (error) {
         console.error('Error joining room:', error);
@@ -128,66 +162,121 @@ const socketService = (io) => {
       }
     });
 
-    // Submit answer
+    // Submit answer (one event per question; total score is the sum of correct answers)
     socket.on('submit-answer', async (data) => {
       try {
-        const { roomId, userId, question, answer, scores, interviewId } = data;
-        const room = activeRooms.get(roomId);
+        const {
+          roomId,
+          userId,
+          answer,
+          scores,
+          interviewId,
+          questionIndex,
+          totalQuestions,
+          questionPoint,
+          isCorrect,
+        } = data;
 
-        if (!room) {
-          socket.emit('error', { message: 'Room not found' });
+        const dbRoom = await Room.findOne({ roomId });
+        if (!dbRoom || dbRoom.status !== 'active') {
+          socket.emit('error', { message: 'Room not found or not active' });
           return;
         }
 
-        // Verify userId matches authenticated user
         if (userId !== socket.user._id.toString()) {
           socket.emit('error', { message: 'User ID mismatch' });
           return;
         }
 
-        // Check if user already submitted (prevent duplicates)
-        const existingScore = await Score.findOne({ roomId, userId });
-        if (existingScore) {
-          socket.emit('error', { message: 'You have already submitted for this question' });
+        if (!dbRoom.users.some((u) => u.userId.toString() === userId)) {
+          socket.emit('error', { message: 'You are not in this room' });
           return;
         }
 
-        // Calculate combined score: (Clarity × 0.4) + (Confidence × 0.3) + (Applicability × 0.3)
-        const combinedScore = Math.round(
-          (scores.clarity * 0.4) + 
-          (scores.confidence * 0.3) + 
-          (scores.applicability * 0.3)
-        );
+        const qIndex = typeof questionIndex === 'number' ? questionIndex : 0;
+        const qTotal =
+          typeof totalQuestions === 'number' ? totalQuestions : TOTAL_COMPETITION_QUESTIONS;
+        if (qIndex < 0 || qIndex >= qTotal || qTotal !== TOTAL_COMPETITION_QUESTIONS) {
+          socket.emit('error', { message: 'Invalid question index' });
+          return;
+        }
 
-        // Save score with detailed breakdown for real-time leaderboard
-        await Score.create({
-          roomId,
-          userId,
-          interviewId: interviewId || null,
-          totalScore: combinedScore,
-          clarity: scores.clarity || 0,
-          confidence: scores.confidence || 0,
-          applicability: scores.applicability || 0,
-        });
+        const normalizedPoint =
+          typeof questionPoint === 'number'
+            ? questionPoint
+            : (isCorrect ? 1 : 0);
+        if (normalizedPoint !== 0 && normalizedPoint !== 1) {
+          socket.emit('error', { message: 'Invalid question score' });
+          return;
+        }
 
-        // Real-time scoring: Notify all users in room
+        const clarity = Number(scores.clarity) || 0;
+        const confidence = Number(scores.confidence) || 0;
+        const applicability = Number(scores.applicability) || 0;
+
+        const answerEntry = {
+          questionIndex: qIndex,
+          answer: String(answer || '').slice(0, 10000),
+          score: normalizedPoint,
+          timestamp: new Date(),
+        };
+
+        let userScore = await Score.findOne({ roomId, userId });
+
+        if (!userScore) {
+          userScore = new Score({
+            roomId,
+            userId,
+            interviewId: interviewId || null,
+            totalScore: normalizedPoint,
+            clarity,
+            confidence,
+            applicability,
+            answers: [answerEntry],
+          });
+        } else {
+          const existingIdx = userScore.answers.findIndex((a) => a.questionIndex === qIndex);
+          if (existingIdx !== -1) {
+            userScore.answers[existingIdx] = answerEntry;
+          } else {
+            userScore.answers.push(answerEntry);
+          }
+          userScore.answers.sort((a, b) => a.questionIndex - b.questionIndex);
+          userScore.totalScore = userScore.answers.reduce((sum, a) => sum + a.score, 0);
+          userScore.clarity = clarity;
+          userScore.confidence = confidence;
+          userScore.applicability = applicability;
+          if (interviewId) userScore.interviewId = interviewId;
+        }
+
+        await userScore.save();
+
         io.to(roomId).emit('answer-submitted', {
           userId,
-          scores,
-          combinedScore,
-          totalScore: combinedScore,
+          scores: { clarity, confidence, applicability },
+          questionPoint: normalizedPoint,
+          totalScore: userScore.totalScore,
+          questionIndex: qIndex,
         });
 
-        // Trigger leaderboard refresh for all users
         io.to(roomId).emit('leaderboard-refresh', { roomId });
 
-        // Check if all users have submitted
         const allScores = await Score.find({ roomId }).populate('userId', 'fullName name email');
-        
-        // Verify all users actually exist and submitted
-        if (allScores.length === room.users.length && allScores.every(s => s.userId)) {
-          // Calculate rankings based on combined score
-          const rankedScores = allScores
+        const roomUserIds = new Set(dbRoom.users.map((u) => u.userId.toString()));
+        const scoresInRoom = allScores.filter(
+          (s) => s.userId && roomUserIds.has(s.userId._id.toString())
+        );
+
+        const everyoneAnsweredAll =
+          scoresInRoom.length === dbRoom.users.length &&
+          scoresInRoom.every(
+            (s) =>
+              s.answers &&
+              s.answers.length === TOTAL_COMPETITION_QUESTIONS
+          );
+
+        if (everyoneAnsweredAll) {
+          const rankedScores = scoresInRoom
             .sort((a, b) => b.totalScore - a.totalScore)
             .map((score, index) => ({
               ...score.toObject(),
@@ -195,17 +284,15 @@ const socketService = (io) => {
               userName: score.userId?.fullName || score.userId?.name || 'Unknown User',
             }));
 
-          // Update ranks in database
-          for (const score of rankedScores) {
-            await Score.findByIdAndUpdate(score._id, { rank: score.rank });
+          for (const rs of rankedScores) {
+            await Score.findByIdAndUpdate(rs._id, { rank: rs.rank });
           }
 
-          // Complete the room
-          const dbRoom = await Room.findOne({ roomId });
-          if (dbRoom) {
-            dbRoom.status = 'completed';
-            dbRoom.completedAt = new Date();
-            await dbRoom.save();
+          const roomDoc = await Room.findOne({ roomId });
+          if (roomDoc) {
+            roomDoc.status = 'completed';
+            roomDoc.completedAt = new Date();
+            await roomDoc.save();
           }
 
           activeRooms.delete(roomId);
@@ -224,9 +311,20 @@ const socketService = (io) => {
     socket.on('get-leaderboard', async (data) => {
       try {
         const { roomId } = data;
-        const scores = await Score.find({ roomId })
+        const roomDoc = await Room.findOne({ roomId });
+        const allowedUserIds = roomDoc
+          ? new Set(roomDoc.users.map((u) => u.userId.toString()))
+          : null;
+
+        let scores = await Score.find({ roomId })
           .populate('userId', 'fullName name')
           .sort({ totalScore: -1 });
+
+        if (allowedUserIds) {
+          scores = scores.filter(
+            (s) => s.userId && allowedUserIds.has(s.userId._id.toString())
+          );
+        }
 
         const leaderboard = scores.map((score, index) => ({
           userId: score.userId._id.toString(),
@@ -263,44 +361,30 @@ const socketService = (io) => {
       socket.emit('left-room', { roomId });
     });
 
-    // Disconnect handler
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
-      
-      for (const [roomId, roomData] of activeRooms.entries()) {
-        const userIndex = roomData.users.findIndex(u => u.socketId === socket.id);
-        if (userIndex !== -1) {
-          roomData.users.splice(userIndex, 1);
-          if (roomData.users.length === 0) {
-            activeRooms.delete(roomId);
-            Room.findOneAndUpdate({ roomId }, { status: 'abandoned' }).catch(err => 
-              console.error('Error updating abandoned room:', err)
-            );
-          } else {
-            io.to(roomId).emit('room-updated', {
-              users: roomData.users,
-              status: roomData.status,
-              roomId,
-              userCount: roomData.users.length,
-              maxUsers: 4,
-            });
-          }
-        }
-      }
-    });
 
-    // Disconnect
-    socket.on('disconnect', () => {
-      console.log('User disconnected:', socket.id);
-      // Remove user from active rooms
-      for (const [roomId, room] of activeRooms.entries()) {
-        const userIndex = room.users.findIndex((u) => u.socketId === socket.id);
-        if (userIndex !== -1) {
-          room.users.splice(userIndex, 1);
+      for (const [roomId, roomData] of activeRooms.entries()) {
+        const userIndex = roomData.users.findIndex((u) => u.socketId === socket.id);
+        if (userIndex === -1) continue;
+
+        roomData.users.splice(userIndex, 1);
+        const maxUsers = roomData.requiredPlayers ?? 4;
+
+        if (roomData.users.length === 0) {
+          activeRooms.delete(roomId);
+          Room.findOneAndUpdate(
+            { roomId },
+            { status: 'completed', completedAt: new Date() }
+          ).catch((err) => console.error('Error closing room on disconnect:', err));
+        } else {
           io.to(roomId).emit('room-updated', {
-            users: room.users,
-            status: room.status,
+            users: roomData.users,
+            status: roomData.status,
             roomId,
+            userCount: roomData.users.length,
+            maxUsers,
+            requiredPlayers: maxUsers,
           });
         }
       }
@@ -308,5 +392,13 @@ const socketService = (io) => {
   });
 };
 
+const emitToUser = (userId, event, payload) => {
+  if (!ioInstance || !userId || !event) {
+    return;
+  }
+  ioInstance.to(`user:${String(userId)}`).emit(event, payload);
+};
+
 module.exports = socketService;
+module.exports.emitToUser = emitToUser;
 
