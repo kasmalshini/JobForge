@@ -17,7 +17,7 @@ const SettingsPage = () => {
             My Profile
           </button>
           <button onClick={() => navigate('/dashboard')} style={styles.backButton}>
-            Back to Dashboard
+            ← Back to Dashboard
           </button>
           <button onClick={logout} style={styles.logoutButton}>
             Logout

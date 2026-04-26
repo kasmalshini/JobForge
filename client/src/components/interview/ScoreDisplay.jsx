@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSpring, animated } from '@react-spring/web';
 
-const ScoreDisplay = ({ scores, feedback, strengths, improvements, isVisible }) => {
+const ScoreDisplay = ({ scores, submittedAnswer, feedback, strengths, improvements, isVisible }) => {
   const normalizeFeedbackItems = (value) => {
     if (Array.isArray(value)) {
       return value.filter((item) => typeof item === 'string' && item.trim().length > 0);
@@ -121,6 +121,13 @@ const ScoreDisplay = ({ scores, feedback, strengths, improvements, isVisible }) 
           (Clarity × 0.4) + (Confidence × 0.3) + (Applicability × 0.3)
         </div>
       </div>
+
+      {submittedAnswer && (
+        <div style={styles.submittedAnswerBox}>
+          <h4 style={styles.submittedAnswerTitle}>Your Submitted Answer</h4>
+          <p style={styles.submittedAnswerText}>{submittedAnswer}</p>
+        </div>
+      )}
 
       {feedback && (
         <div style={styles.feedback}>
@@ -242,6 +249,26 @@ const styles = {
     color: 'rgba(255,255,255,0.8)',
     marginTop: '10px',
     fontStyle: 'italic',
+  },
+  submittedAnswerBox: {
+    marginTop: '14px',
+    padding: '16px',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb',
+    background: '#f9fafb',
+  },
+  submittedAnswerTitle: {
+    fontSize: '16px',
+    margin: '0 0 8px 0',
+    color: '#111827',
+  },
+  submittedAnswerText: {
+    margin: 0,
+    fontSize: '15px',
+    color: '#374151',
+    lineHeight: '1.6',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
   },
   feedback: {
     marginTop: '20px',

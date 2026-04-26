@@ -22,35 +22,101 @@ const INTERVIEW_QUESTIONS = [...GENERAL_QUESTIONS, ...(ROLE_QUESTIONS["Software 
 /** Must match server `TOTAL_COMPETITION_QUESTIONS` (first N general questions). */
 const COMPETITION_QUESTION_COUNT = 10;
 const COMPETITION_QUESTIONS = GENERAL_QUESTIONS.slice(0, COMPETITION_QUESTION_COUNT);
+const MIN_QUESTION_COUNT = 10;
 
 const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', difficulty = null }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  const getSelectedLabel = () => {
+    if (roomId) return 'Competition';
+    if (category === null) return 'Role-Specific';
+    if (category === 'general') return 'General';
+    if (category === 'software') return 'Software';
+    return 'Mixed';
+  };
+
+  const getDifficultyLabel = () => {
+    if (!difficulty || difficulty === 'all') return 'All';
+    return difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+  };
+
+  const dedupeQuestions = (questionList) => {
+    const seen = new Set();
+    return questionList.filter((q) => {
+      const text = getQuestionText(q);
+      if (!text || seen.has(text)) return false;
+      seen.add(text);
+      return true;
+    });
+  };
+
+  const filterQuestionsByDifficulty = (questionList, level) => {
+    return questionList.filter((q) => getQuestionDifficulty(q) === level);
+  };
+
+  const pickQuestionsForDifficulty = (primaryPool, fallbackPool = []) => {
+    const normalizedPrimary = dedupeQuestions(primaryPool);
+    const normalizedFallback = dedupeQuestions(fallbackPool);
+    const mergedPool = dedupeQuestions([...normalizedPrimary, ...normalizedFallback]);
+
+    if (!difficulty || difficulty === 'all') {
+      if (normalizedPrimary.length >= MIN_QUESTION_COUNT) return normalizedPrimary;
+      return dedupeQuestions([...normalizedPrimary, ...mergedPool]);
+    }
+
+    const fromPrimary = filterQuestionsByDifficulty(normalizedPrimary, difficulty);
+    const fromFallback = filterQuestionsByDifficulty(normalizedFallback, difficulty);
+    let selected = dedupeQuestions([...fromPrimary, ...fromFallback]);
+
+    // Ensure each difficulty selection has at least 10 questions when enough data exists.
+    if (selected.length < MIN_QUESTION_COUNT) {
+      const fillPool = mergedPool.filter((q) => !selected.includes(q));
+      selected = dedupeQuestions([...selected, ...fillPool]);
+    }
+
+    // Last fallback: keep interview running even if the chosen level has no items in this type.
+    if (selected.length === 0) {
+      return normalizedPrimary.length > 0 ? normalizedPrimary : normalizedFallback;
+    }
+
+    return selected;
+  };
   
   // Select questions based on category, user role, and difficulty
   const getQuestions = () => {
-    let selectedQuestions = [];
-    
-    // If category is null and user has a role, use role-specific questions
-    if (category === null && user?.role && ROLE_QUESTIONS[user.role]) {
-      selectedQuestions = ROLE_QUESTIONS[user.role];
-    } else if (category === 'general') {
-      selectedQuestions = GENERAL_QUESTIONS;
-    } else if (category === 'software') {
-      selectedQuestions = ROLE_QUESTIONS["Software Developer"] || GENERAL_QUESTIONS;
-    } else {
-      selectedQuestions = INTERVIEW_QUESTIONS; // mixed
+    const userRolePool = user?.role && ROLE_QUESTIONS[user.role] ? ROLE_QUESTIONS[user.role] : [];
+    const softwarePool = ROLE_QUESTIONS["Software Developer"] || [];
+
+    // Role-specific
+    if (category === null) {
+      return pickQuestionsForDifficulty(
+        userRolePool,
+        [...userRolePool, ...GENERAL_QUESTIONS]
+      );
     }
-    
-    // Filter by difficulty if specified
-    if (difficulty && difficulty !== 'all') {
-      selectedQuestions = selectedQuestions.filter(q => {
-        const qDifficulty = getQuestionDifficulty(q);
-        return qDifficulty === difficulty;
-      });
+
+    // General interview
+    if (category === 'general') {
+      return pickQuestionsForDifficulty(
+        GENERAL_QUESTIONS,
+        [...GENERAL_QUESTIONS, ...INTERVIEW_QUESTIONS]
+      );
     }
-    
-    return selectedQuestions;
+
+    // Software development interview
+    if (category === 'software') {
+      return pickQuestionsForDifficulty(
+        softwarePool,
+        [...softwarePool, ...GENERAL_QUESTIONS]
+      );
+    }
+
+    // Mixed interview
+    return pickQuestionsForDifficulty(
+      INTERVIEW_QUESTIONS,
+      [...INTERVIEW_QUESTIONS, ...userRolePool]
+    );
   };
 
   const questions = roomId ? COMPETITION_QUESTIONS : getQuestions();
@@ -63,6 +129,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
   const [feedback, setFeedback] = useState('');
   const [strengths, setStrengths] = useState([]);
   const [improvements, setImprovements] = useState([]);
+  const [currentSubmittedAnswer, setCurrentSubmittedAnswer] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isQuestionVisible, setIsQuestionVisible] = useState(false);
   const [interviewComplete, setInterviewComplete] = useState(false);
@@ -79,6 +146,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
 
   const handleAnswerSubmit = async (submittedAnswer) => {
     setIsAnalyzing(true);
+    setCurrentSubmittedAnswer(submittedAnswer || '');
 
       try {
         const response = await api.post('/interviews/analyze', {
@@ -118,6 +186,8 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
         );
         const questionPoint = combinedScore >= 60 && data.applicability >= 50 ? 1 : 0;
         setAllScores((prevScores) => [...prevScores, {
+          question: currentQuestion,
+          submittedAnswer,
           clarity: data.clarity,
           confidence: data.confidence,
           applicability: data.applicability,
@@ -159,6 +229,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
         setFeedback('');
         setStrengths([]);
         setImprovements([]);
+        setCurrentSubmittedAnswer('');
         setIsQuestionVisible(false);
         setTimeout(() => setIsQuestionVisible(true), 300);
         return;
@@ -174,6 +245,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
       setFeedback('');
       setStrengths([]);
       setImprovements([]);
+      setCurrentSubmittedAnswer('');
       setIsQuestionVisible(false);
       // Keep allScores for final calculation
       setTimeout(() => setIsQuestionVisible(true), 300);
@@ -191,6 +263,19 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
     ? Math.round(allScores.reduce((sum, s) => sum + s.combinedScore, 0) / allScores.length)
     : null;
   const totalPoints = allScores.reduce((sum, s) => sum + (s.questionPoint || 0), 0);
+
+  if (!currentQuestionObj || !currentQuestion) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.emptyState}>
+          <h3 style={styles.emptyStateTitle}>No questions available</h3>
+          <p style={styles.emptyStateText}>
+            Try a different difficulty or interview type.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (interviewComplete) {
     return (
@@ -220,6 +305,28 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
             </p>
           </div>
         )}
+        {allScores.length > 0 && (
+          <div style={styles.answerReviewSection}>
+            <h3 style={styles.answerReviewTitle}>Your Submitted Answers</h3>
+            <div style={styles.answerReviewList}>
+              {allScores.map((entry, index) => (
+                <div key={`review-${index}`} style={styles.answerReviewCard}>
+                  <div style={styles.answerReviewMeta}>
+                    <span style={styles.answerReviewIndex}>Question {index + 1}</span>
+                    <span style={styles.answerReviewScore}>Score: {entry.combinedScore}/100</span>
+                  </div>
+                  <p style={styles.answerReviewQuestion}>{entry.question}</p>
+                  <div style={styles.answerReviewAnswerBlock}>
+                    <div style={styles.answerReviewAnswerLabel}>Your exact answer:</div>
+                    <p style={styles.answerReviewAnswer}>
+                      {entry.submittedAnswer || 'No answer submitted.'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <p style={styles.completeText}>
           Great job completing the interview. Check your dashboard for your results.
         </p>
@@ -236,6 +343,9 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
   return (
     <div style={styles.container}>
       <div style={styles.interviewArea}>
+        <div style={styles.sessionSummary}>
+          Selected: {getSelectedLabel()} | Difficulty: {getDifficultyLabel()} | Questions: {questions.length}
+        </div>
         <Avatar isSpeaking={isAvatarSpeaking} />
         
         <QuestionBubble 
@@ -263,6 +373,7 @@ const InterviewInterface = ({ onComplete, roomId = null, category = 'mixed', dif
           <>
             <ScoreDisplay
               scores={scores}
+              submittedAnswer={currentSubmittedAnswer}
               feedback={feedback}
               strengths={strengths}
               improvements={improvements}
@@ -294,6 +405,17 @@ const styles = {
     backdropFilter: 'blur(10px)',
     borderRadius: '20px',
     padding: 'clamp(18px, 4vw, 40px)',
+  },
+  sessionSummary: {
+    textAlign: 'center',
+    color: 'white',
+    fontSize: 'clamp(13px, 3.5vw, 16px)',
+    fontWeight: 'bold',
+    marginBottom: '18px',
+    background: 'rgba(255,255,255,0.12)',
+    border: '1px solid rgba(255,255,255,0.22)',
+    borderRadius: '10px',
+    padding: '10px 12px',
   },
   analyzing: {
     display: 'flex',
@@ -376,6 +498,71 @@ const styles = {
     fontStyle: 'italic',
     textAlign: 'center',
   },
+  answerReviewSection: {
+    maxWidth: '900px',
+    margin: '20px auto 0',
+    textAlign: 'left',
+  },
+  answerReviewTitle: {
+    fontSize: '24px',
+    marginBottom: '16px',
+    color: 'white',
+    textAlign: 'center',
+  },
+  answerReviewList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  answerReviewCard: {
+    background: 'rgba(255,255,255,0.12)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '12px',
+    padding: '14px',
+  },
+  answerReviewMeta: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '10px',
+    flexWrap: 'wrap',
+    marginBottom: '10px',
+  },
+  answerReviewIndex: {
+    fontSize: '13px',
+    fontWeight: 'bold',
+    color: 'rgba(255,255,255,0.9)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  answerReviewScore: {
+    fontSize: '13px',
+    color: 'rgba(255,255,255,0.85)',
+  },
+  answerReviewQuestion: {
+    margin: '0 0 10px 0',
+    fontSize: '16px',
+    color: 'white',
+    fontWeight: 'bold',
+    lineHeight: 1.5,
+  },
+  answerReviewAnswerBlock: {
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '8px',
+    padding: '10px',
+  },
+  answerReviewAnswerLabel: {
+    fontSize: '13px',
+    color: 'rgba(255,255,255,0.85)',
+    marginBottom: '6px',
+  },
+  answerReviewAnswer: {
+    margin: 0,
+    fontSize: '14px',
+    color: 'white',
+    lineHeight: 1.6,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  },
   viewStatsButton: {
     padding: '15px 40px',
     background: 'white',
@@ -387,6 +574,24 @@ const styles = {
     cursor: 'pointer',
     marginTop: '20px',
     transition: 'transform 0.2s',
+  },
+  emptyState: {
+    maxWidth: '700px',
+    margin: '60px auto',
+    padding: '30px',
+    borderRadius: '16px',
+    background: 'rgba(255,255,255,0.12)',
+    color: 'white',
+    textAlign: 'center',
+  },
+  emptyStateTitle: {
+    margin: '0 0 10px 0',
+    fontSize: '28px',
+  },
+  emptyStateText: {
+    margin: 0,
+    fontSize: '16px',
+    color: 'rgba(255,255,255,0.9)',
   },
 };
 

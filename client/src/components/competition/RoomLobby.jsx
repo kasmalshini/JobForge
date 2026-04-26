@@ -3,25 +3,44 @@ import { connectSocket } from '../../services/socket';
 import { getToken } from '../../utils/token';
 import api from '../../services/api';
 
-const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitionStart }) => {
+const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitionStart, onBackToJoin }) => {
   const [users, setUsers] = useState([]);
   const [status, setStatus] = useState('waiting');
   const [, setSocket] = useState(null);
   const [maxPlayers, setMaxPlayers] = useState(requiredPlayers);
+  const [socketError, setSocketError] = useState('');
   const [inviteTarget, setInviteTarget] = useState('');
   const [inviteStatus, setInviteStatus] = useState('');
   const [inviting, setInviting] = useState(false);
+
+  const currentUserName = userName || 'You';
+  const ensureCurrentUserInList = (incomingUsers = []) => {
+    const normalized = Array.isArray(incomingUsers) ? incomingUsers : [];
+    const hasCurrentUser = normalized.some(
+      (u) => String(u.userId) === String(userId)
+    );
+    if (hasCurrentUser) return normalized;
+    return [{ userId, name: currentUserName, socketId: null }, ...normalized];
+  };
 
   useEffect(() => {
     setMaxPlayers(requiredPlayers);
   }, [requiredPlayers]);
 
   useEffect(() => {
+    // Optimistically render current user while socket events are in flight.
+    setUsers((prev) => ensureCurrentUserInList(prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, currentUserName]);
+
+  useEffect(() => {
     const token = getToken();
     const sock = connectSocket(token);
     setSocket(sock);
+    setSocketError('');
 
     const emitJoinRoom = () => {
+      setSocketError('');
       sock.emit('join-room', { userId, userName, roomId, requiredPlayers });
     };
 
@@ -31,13 +50,13 @@ const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitio
     }
 
     sock.on('joined-room', (data) => {
-      setUsers(data.users);
+      setUsers(ensureCurrentUserInList(data.users));
       setStatus(data.status);
       if (data.requiredPlayers) setMaxPlayers(data.requiredPlayers);
     });
 
     sock.on('room-updated', (data) => {
-      setUsers(data.users || []);
+      setUsers(ensureCurrentUserInList(data.users || []));
       setStatus(data.status || 'waiting');
       if (data.requiredPlayers != null) setMaxPlayers(data.requiredPlayers);
       if (data.maxUsers != null) setMaxPlayers(data.maxUsers);
@@ -52,6 +71,8 @@ const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitio
 
     sock.on('error', (error) => {
       console.error('Socket error:', error);
+      const message = error?.message || 'Failed to join room. Check connection and room settings.';
+      setSocketError(message);
     });
 
     return () => {
@@ -89,6 +110,15 @@ const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitio
 
   return (
     <div style={styles.container}>
+      <div style={styles.topActions}>
+        <button
+          type="button"
+          onClick={onBackToJoin}
+          style={styles.backButton}
+        >
+          ← Back to Join Competition
+        </button>
+      </div>
       <h2 style={styles.title}>Waiting Room</h2>
       <p style={styles.roomId}>Room ID: {roomId}</p>
       
@@ -137,6 +167,9 @@ const RoomLobby = ({ roomId, userId, userName, requiredPlayers = 4, onCompetitio
           {Math.max(0, maxPlayers - users.length) === 1 ? 'player' : 'players'} to start
         </p>
       )}
+      {!!socketError && (
+        <p style={styles.socketError}>{socketError}</p>
+      )}
 
       {status === 'waiting' && (
         <div style={styles.inviteSection}>
@@ -173,6 +206,21 @@ const styles = {
     maxWidth: '600px',
     margin: '0 auto',
     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+  },
+  topActions: {
+    display: 'flex',
+    justifyContent: 'flex-start',
+    marginBottom: '8px',
+  },
+  backButton: {
+    border: 'none',
+    borderRadius: '8px',
+    padding: '8px 12px',
+    background: '#f1f5f9',
+    color: '#1f2937',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 'bold',
   },
   title: {
     fontSize: 'clamp(24px, 6vw, 32px)',
@@ -277,6 +325,15 @@ const styles = {
     color: '#666',
     fontSize: '16px',
     marginTop: '20px',
+  },
+  socketError: {
+    textAlign: 'center',
+    color: '#c0392b',
+    fontSize: '14px',
+    marginTop: '8px',
+    background: '#fdecea',
+    borderRadius: '8px',
+    padding: '8px 10px',
   },
   activeIcon: {
     fontSize: '24px',

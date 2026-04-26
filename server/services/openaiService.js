@@ -81,12 +81,21 @@ const STOPWORDS = new Set([
   'we', 'you', 'i', 'they', 'he', 'she', 'them', 'our', 'your', 'my', 'their', 'but', 'about', 'into',
 ]);
 
+const IMPORTANT_SHORT_TOKENS = new Set([
+  'ai', 'ml', 'ui', 'ux', 'qa', 'db', 'ci', 'cd', 'js', 'ts', 'uxr', 'api',
+]);
+
 const tokenize = (text) =>
   String(text || '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter((token) => token.length > 2 && !STOPWORDS.has(token));
+    .filter((token) => {
+      if (!token) return false;
+      const isImportantShortToken = IMPORTANT_SHORT_TOKENS.has(token);
+      const hasValidLength = token.length > 2 || isImportantShortToken;
+      return hasValidLength && !STOPWORDS.has(token);
+    });
 
 const isMeaninglessAnswer = (answer) => {
   const raw = String(answer || '').trim();
@@ -140,7 +149,8 @@ const heuristicFallbackAnalysis = (question, answer) => {
   let applicability = normalizeScore(20 + relevanceRatio * 65 + detailBonus);
 
   // If response is likely off-topic, force stricter low scoring.
-  const isLikelyOffTopic = relevanceRatio < 0.12 || answerTokens.length < 4;
+  const hasQuestionTermMatch = overlap > 0;
+  const isLikelyOffTopic = (relevanceRatio < 0.12 && !hasQuestionTermMatch) || answerTokens.length < 4;
   if (isLikelyOffTopic) {
     applicability = Math.min(applicability, 20);
     clarity = Math.min(clarity, 35);
@@ -163,6 +173,7 @@ const heuristicFallbackAnalysis = (question, answer) => {
           'Address the exact topic asked and include one relevant technical example.',
         ]
       : [
+          'Your answer is partially correct; add more depth to fully explain the concept.',
           'Add one concrete example or metric to strengthen credibility.',
           'Use explicit, decisive phrasing and avoid vague language.',
         ],
@@ -201,7 +212,8 @@ const normalizeAnalysis = (analysis, question = '', answer = '') => {
   const answerTokenSet = new Set(answerTokens);
   const overlap = questionTokens.filter((token) => answerTokenSet.has(token)).length;
   const relevanceRatio = questionTokens.length > 0 ? overlap / questionTokens.length : 0;
-  const likelyOffTopic = relevanceRatio < 0.12 || answerTokens.length < 4;
+  const hasQuestionTermMatch = overlap > 0;
+  const likelyOffTopic = (relevanceRatio < 0.12 && !hasQuestionTermMatch) || answerTokens.length < 4;
 
   let clarity = normalizeScore(getScore(analysis, 'clarity'));
   let confidence = normalizeScore(getScore(analysis, 'confidence'));

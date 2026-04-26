@@ -1,9 +1,66 @@
 const User = require('../models/User');
 const Interview = require('../models/Interview');
 
+const MIN_INTERVIEWS_FOR_GLOBAL_RANK = 5;
+const BAYESIAN_PRIOR_WEIGHT = 10;
+
 // Helper function to get user display name
 const getDisplayName = (user) => {
   return user.fullName || user.name || 'User';
+};
+
+const sortByRankingRules = (a, b) => {
+  if (b.adjustedScore !== a.adjustedScore) {
+    return b.adjustedScore - a.adjustedScore;
+  }
+  if (b.averageScore !== a.averageScore) {
+    return b.averageScore - a.averageScore;
+  }
+  if (b.totalInterviews !== a.totalInterviews) {
+    return b.totalInterviews - a.totalInterviews;
+  }
+  const timeA = new Date(a.createdAt || 0).getTime();
+  const timeB = new Date(b.createdAt || 0).getTime();
+  if (timeA !== timeB) {
+    return timeA - timeB;
+  }
+  return String(a.userId).localeCompare(String(b.userId));
+};
+
+const buildRankedEntries = (users) => {
+  const globalMean = users.length > 0
+    ? users.reduce((sum, user) => sum + (Number(user.averageScore) || 0), 0) / users.length
+    : 0;
+
+  const ranked = users.map((user) => {
+    const averageScore = Number(user.averageScore) || 0;
+    const totalInterviews = Number(user.totalInterviews) || 0;
+    const adjustedScore = Math.round(
+      ((averageScore * totalInterviews) + (globalMean * BAYESIAN_PRIOR_WEIGHT))
+      / (totalInterviews + BAYESIAN_PRIOR_WEIGHT)
+    );
+
+    return {
+      userId: user._id,
+      name: getDisplayName(user),
+      email: user.email,
+      role: user.role,
+      averageScore,
+      adjustedScore,
+      totalInterviews,
+      createdAt: user.createdAt,
+      rankReason: 'Bayesian-adjusted global score',
+    };
+  });
+
+  ranked.sort(sortByRankingRules);
+  return {
+    globalMean: Math.round(globalMean),
+    ranked: ranked.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+    })),
+  };
 };
 
 // @desc    Get global leaderboard
@@ -11,22 +68,22 @@ const getDisplayName = (user) => {
 // @access  Private
 const getLeaderboard = async (req, res) => {
   try {
-    const users = await User.find({ totalInterviews: { $gt: 0 } })
-      .select('fullName name email role averageScore totalInterviews rank')
-      .sort({ averageScore: -1 })
+    const users = await User.find({ totalInterviews: { $gte: MIN_INTERVIEWS_FOR_GLOBAL_RANK } })
+      .select('fullName name email role averageScore totalInterviews createdAt')
       .limit(100);
 
-    const leaderboard = users.map((user, index) => ({
-      userId: user._id,
-      name: getDisplayName(user),
-      email: user.email,
-      role: user.role,
-      averageScore: user.averageScore,
-      totalInterviews: user.totalInterviews,
-      rank: index + 1,
-    }));
+    const { ranked, globalMean } = buildRankedEntries(users);
 
-    res.json({ success: true, leaderboard });
+    res.json({
+      success: true,
+      leaderboard: ranked,
+      rankingMeta: {
+        method: 'bayesian_adjusted_score',
+        minInterviews: MIN_INTERVIEWS_FOR_GLOBAL_RANK,
+        priorWeight: BAYESIAN_PRIOR_WEIGHT,
+        globalMean,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching leaderboard', error: error.message });
   }
@@ -116,22 +173,22 @@ const getUserStats = async (req, res) => {
 const getTopUsers = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const users = await User.find({ totalInterviews: { $gt: 0 } })
-      .select('fullName name email role averageScore totalInterviews')
-      .sort({ averageScore: -1 })
-      .limit(limit);
+    const users = await User.find({ totalInterviews: { $gte: MIN_INTERVIEWS_FOR_GLOBAL_RANK } })
+      .select('fullName name email role averageScore totalInterviews createdAt')
+      .limit(Math.max(limit, 20));
 
-    const topUsers = users.map((user, index) => ({
-      rank: index + 1,
-      userId: user._id,
-      name: getDisplayName(user),
-      email: user.email,
-      role: user.role,
-      averageScore: user.averageScore,
-      totalInterviews: user.totalInterviews,
-    }));
+    const { ranked } = buildRankedEntries(users);
+    const topUsers = ranked.slice(0, limit);
 
-    res.json({ success: true, topUsers });
+    res.json({
+      success: true,
+      topUsers,
+      rankingMeta: {
+        method: 'bayesian_adjusted_score',
+        minInterviews: MIN_INTERVIEWS_FOR_GLOBAL_RANK,
+        priorWeight: BAYESIAN_PRIOR_WEIGHT,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching top users', error: error.message });
   }

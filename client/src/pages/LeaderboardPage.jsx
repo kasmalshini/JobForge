@@ -7,6 +7,7 @@ const LeaderboardPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [leaderboard, setLeaderboard] = useState([]);
+  const [rankingMeta, setRankingMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, role
 
@@ -22,6 +23,7 @@ const LeaderboardPage = () => {
       }
 
       setLeaderboard(data);
+      setRankingMeta(response.data.rankingMeta || null);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {
@@ -59,7 +61,13 @@ const LeaderboardPage = () => {
 
       <div style={styles.content}>
         <h2 style={styles.title}>Global Leaderboard</h2>
-        <p style={styles.subtitle}>Rankings based on average combined score</p>
+        <p style={styles.subtitle}>Rankings based on Bayesian-adjusted score for fairness</p>
+        {rankingMeta && (
+          <p style={styles.metaNote}>
+            Minimum interviews: {rankingMeta.minInterviews} | Prior weight: {rankingMeta.priorWeight}
+            {typeof rankingMeta.globalMean === 'number' ? ` | Global mean: ${rankingMeta.globalMean}` : ''}
+          </p>
+        )}
 
         <div style={styles.filters}>
           <button
@@ -115,8 +123,9 @@ const LeaderboardPage = () => {
                   </div>
                 </div>
                 <div style={styles.scoreSection}>
-                  <div style={styles.scoreLabel}>Average Score</div>
-                  <div style={styles.scoreValue}>{entry.averageScore}/100</div>
+                  <div style={styles.scoreLabel}>Adjusted Score</div>
+                  <div style={styles.scoreValue}>{entry.adjustedScore ?? entry.averageScore}/100</div>
+                  <div style={styles.secondaryScore}>Avg: {entry.averageScore}/100</div>
                 </div>
               </div>
             ))
@@ -162,7 +171,13 @@ const styles = {
     color: 'rgba(255,255,255,0.9)',
     fontSize: 'clamp(14px, 3.8vw, 18px)',
     textAlign: 'center',
-    marginBottom: '30px',
+    marginBottom: '8px',
+  },
+  metaNote: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: '13px',
+    textAlign: 'center',
+    marginBottom: '24px',
   },
   filters: {
     display: 'flex',
@@ -269,6 +284,11 @@ const styles = {
     fontSize: '28px',
     fontWeight: 'bold',
     color: '#333',
+  },
+  secondaryScore: {
+    fontSize: '12px',
+    color: '#666',
+    marginTop: '4px',
   },
   empty: {
     textAlign: 'center',

@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const socketIo = require('socket.io');
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const socketService = require('./services/socketService');
 const { startEmailQueue } = require('./services/emailQueue');
@@ -93,7 +94,14 @@ app.use('/api/speech', require('./routes/speechRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Server is running' });
+  const dbReady = mongoose.connection.readyState === 1;
+  res.status(dbReady ? 200 : 503).json({
+    status: dbReady ? 'OK' : 'DEGRADED',
+    message: dbReady
+      ? 'Server and database are running'
+      : 'Server is running but database is unavailable',
+    database: dbReady ? 'connected' : 'disconnected',
+  });
 });
 
 // Error handler middleware (must be last)

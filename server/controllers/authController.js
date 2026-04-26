@@ -21,6 +21,20 @@ const getApiBaseUrl = (req) => {
   return process.env.API_BASE_URL || `${req.protocol}://${req.get('host')}`;
 };
 
+const withTimeout = async (promise, timeoutMs, timeoutMessage) => {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 // @desc    Register new user
 // @route   POST /api/auth/register
 // @access  Public
@@ -257,12 +271,23 @@ const forgotPassword = async (req, res) => {
     const resetLink = `${clientBaseUrl}/reset-password/${resetToken}`;
 
     try {
-      await sendPasswordResetEmail(user.email, resetToken, resetLink);
-
-      res.json({
+      const emailResult = await withTimeout(
+        sendPasswordResetEmail(user.email, resetToken, resetLink),
+        12000,
+        'Email provider timeout'
+      );
+      const responsePayload = {
         success: true,
         message: 'Password reset link has been sent to your email. Check your inbox and spam folder.',
-      });
+      };
+      if (process.env.NODE_ENV !== 'production' && emailResult?.previewUrl) {
+        responsePayload.message = emailResult.deliveryMode === 'dev-fallback'
+          ? 'Primary email failed. A dev test email was generated. Open the preview URL below.'
+          : responsePayload.message;
+        responsePayload.previewUrl = emailResult.previewUrl;
+      }
+
+      res.json(responsePayload);
     } catch (emailError) {
       console.error('Email service error:', emailError);
       const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -281,10 +306,17 @@ const forgotPassword = async (req, res) => {
         success: true,
         message: 'If that email exists, a password reset link has been sent.',
       };
+      const emailErrorText = String(emailError?.message || '');
+      const hasAuthFailure = /Invalid login|EAUTH|Username and Password not accepted/i.test(emailErrorText);
 
       // In development, return the reset link for local testing when SMTP is not configured.
       if (isDevelopment && !hasEmailConfig) {
         fallbackResponse.message = 'Email delivery is not configured. Use the reset link below for local testing.';
+        fallbackResponse.resetToken = resetToken;
+        fallbackResponse.resetLink = resetLink;
+      }
+      if (isDevelopment && hasAuthFailure) {
+        fallbackResponse.message = 'Email login failed. Set a valid Gmail App Password (16 chars) or SMTP credentials.';
         fallbackResponse.resetToken = resetToken;
         fallbackResponse.resetLink = resetLink;
       }

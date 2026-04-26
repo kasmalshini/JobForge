@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import InterviewInterface from '../components/interview/InterviewInterface';
@@ -8,12 +8,34 @@ const InterviewPage = () => {
   const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
+  const [isDifficultyOpen, setIsDifficultyOpen] = useState(false);
+  const [hoveredDifficulty, setHoveredDifficulty] = useState(null);
+  const difficultyRef = useRef(null);
+  const difficultyOptions = [
+    { value: 'all', label: 'All Levels' },
+    { value: 'beginner', label: 'Beginner' },
+    { value: 'intermediate', label: 'Intermediate' },
+    { value: 'advanced', label: 'Advanced' },
+  ];
 
   const handleComplete = () => {
     setTimeout(() => {
       navigate('/dashboard');
     }, 3000);
   };
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (difficultyRef.current && !difficultyRef.current.contains(event.target)) {
+        setIsDifficultyOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const selectedDifficultyLabel =
+    difficultyOptions.find((option) => option.value === selectedDifficulty)?.label || 'All Levels';
 
   if (!selectedCategory) {
     return (
@@ -34,16 +56,48 @@ const InterviewPage = () => {
           
           <div style={styles.difficultyFilter}>
             <label style={styles.filterLabel}>Difficulty Level:</label>
-            <select
-              value={selectedDifficulty}
-              onChange={(e) => setSelectedDifficulty(e.target.value)}
-              style={styles.difficultySelect}
-            >
-              <option value="all">All Levels</option>
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-            </select>
+            <div style={styles.dropdownContainer} ref={difficultyRef}>
+              <button
+                type="button"
+                style={styles.difficultySelect}
+                onClick={() => setIsDifficultyOpen((prev) => !prev)}
+                aria-haspopup="listbox"
+                aria-expanded={isDifficultyOpen}
+              >
+                <span>{selectedDifficultyLabel}</span>
+                <span style={styles.dropdownArrow}>{isDifficultyOpen ? '▲' : '▼'}</span>
+              </button>
+              {isDifficultyOpen && (
+                <div style={styles.dropdownMenu} role="listbox">
+                  {difficultyOptions.map((option) => {
+                    const isSelected = option.value === selectedDifficulty;
+                    const isHovered = option.value === hoveredDifficulty;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        onMouseEnter={() => setHoveredDifficulty(option.value)}
+                        onMouseLeave={() => setHoveredDifficulty(null)}
+                        onClick={() => {
+                          setSelectedDifficulty(option.value);
+                          setIsDifficultyOpen(false);
+                          setHoveredDifficulty(null);
+                        }}
+                        style={{
+                          ...styles.dropdownItem,
+                          ...(isHovered ? styles.dropdownItemHover : {}),
+                          ...(isSelected ? styles.dropdownItemSelected : {}),
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           
           <div style={styles.categories}>
@@ -100,8 +154,8 @@ const InterviewPage = () => {
   return (
     <div>
       <nav style={styles.nav}>
-        <button onClick={() => navigate('/dashboard')} style={styles.backButton}>
-          ← Back to Dashboard
+        <button onClick={() => setSelectedCategory(null)} style={styles.backButton}>
+          ← Back to Interview Types
         </button>
       </nav>
       <InterviewInterface 
@@ -205,11 +259,58 @@ const styles = {
     padding: '10px 20px',
     borderRadius: '8px',
     border: '2px solid white',
-    background: 'rgba(255,255,255,0.2)',
+    background: '#2b5b45',
     color: 'white',
     fontSize: 'clamp(14px, 3.5vw, 16px)',
     fontWeight: 'bold',
     cursor: 'pointer',
+    outline: 'none',
+    minWidth: '150px',
+    display: 'inline-flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  dropdownContainer: {
+    display: 'inline-block',
+    position: 'relative',
+    minWidth: '170px',
+  },
+  dropdownArrow: {
+    fontSize: '12px',
+    opacity: 0.9,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 'calc(100% + 6px)',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #d1d5db',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.2)',
+    overflow: 'hidden',
+    zIndex: 20,
+  },
+  dropdownItem: {
+    width: '100%',
+    textAlign: 'left',
+    border: 'none',
+    background: 'white',
+    color: '#1f2937',
+    padding: '10px 12px',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'background 0.15s ease, color 0.15s ease',
+  },
+  dropdownItemHover: {
+    background: '#f3f4f6',
+    color: '#111827',
+  },
+  dropdownItemSelected: {
+    background: '#e6f4ec',
+    color: '#166534',
+    fontWeight: 'bold',
   },
 };
 

@@ -72,7 +72,7 @@ const MyProfilePage = () => {
         <h1 style={styles.logo}>JobForge</h1>
         <div style={styles.navRight}>
           <button onClick={() => navigate('/dashboard')} style={styles.backButton}>
-            Dashboard
+            ← Back to Dashboard
           </button>
           <button onClick={() => navigate('/settings')} style={styles.settingsButton}>
             Settings
@@ -92,7 +92,12 @@ const MyProfilePage = () => {
             </div>
           </div>
           <div style={styles.profileInfo}>
-            <h1 style={styles.userName}>{user?.fullName || 'User'}</h1>
+            <div style={styles.userNameRow}>
+              <h1 style={styles.userName}>{user?.fullName || 'User'}</h1>
+              <span style={styles.rankBadge}>
+                {stats?.rank ? `#${stats.rank} Global` : 'Unranked'}
+              </span>
+            </div>
             <p style={styles.email}>{user?.email}</p>
             <div style={styles.roleSkillsContainer}>
               {user?.role && (
@@ -191,54 +196,53 @@ const MyProfilePage = () => {
 
             {/* Performance Breakdown */}
             {stats && (
-              <div style={styles.performanceCard}>
+              <div style={styles.sectionCard}>
                 <h3 style={styles.cardTitle}>Performance Metrics</h3>
-
-                <div style={styles.metricRow}>
-                  <div style={styles.metricLabel}>Clarity</div>
-                  <div style={styles.progressBar}>
-                    <div
-                      style={{
-                        ...styles.progressFill,
-                        width: `${stats.avgClarity || 0}%`,
-                        backgroundColor: getScoreColor(stats.avgClarity || 0),
-                      }}
-                    />
+                <div style={styles.metricsMiniGrid}>
+                  <div style={styles.metricMiniCard}>
+                    <div style={styles.metricMiniLabel}>Clarity</div>
+                    <div style={styles.metricMiniValue}>
+                      {stats.avgClarity ? Math.round(stats.avgClarity) : 0}%
+                    </div>
+                    <div style={styles.progressBar}>
+                      <div
+                        style={{
+                          ...styles.progressFill,
+                          width: `${stats.avgClarity || 0}%`,
+                          backgroundColor: getScoreColor(stats.avgClarity || 0),
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div style={styles.metricValue}>
-                    {stats.avgClarity ? Math.round(stats.avgClarity) : 0}%
+                  <div style={styles.metricMiniCard}>
+                    <div style={styles.metricMiniLabel}>Confidence</div>
+                    <div style={styles.metricMiniValue}>
+                      {stats.avgConfidence ? Math.round(stats.avgConfidence) : 0}%
+                    </div>
+                    <div style={styles.progressBar}>
+                      <div
+                        style={{
+                          ...styles.progressFill,
+                          width: `${stats.avgConfidence || 0}%`,
+                          backgroundColor: getScoreColor(stats.avgConfidence || 0),
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-
-                <div style={styles.metricRow}>
-                  <div style={styles.metricLabel}>Confidence</div>
-                  <div style={styles.progressBar}>
-                    <div
-                      style={{
-                        ...styles.progressFill,
-                        width: `${stats.avgConfidence || 0}%`,
-                        backgroundColor: getScoreColor(stats.avgConfidence || 0),
-                      }}
-                    />
-                  </div>
-                  <div style={styles.metricValue}>
-                    {stats.avgConfidence ? Math.round(stats.avgConfidence) : 0}%
-                  </div>
-                </div>
-
-                <div style={styles.metricRow}>
-                  <div style={styles.metricLabel}>Applicability</div>
-                  <div style={styles.progressBar}>
-                    <div
-                      style={{
-                        ...styles.progressFill,
-                        width: `${stats.avgApplicability || 0}%`,
-                        backgroundColor: getScoreColor(stats.avgApplicability || 0),
-                      }}
-                    />
-                  </div>
-                  <div style={styles.metricValue}>
-                    {stats.avgApplicability ? Math.round(stats.avgApplicability) : 0}%
+                  <div style={styles.metricMiniCard}>
+                    <div style={styles.metricMiniLabel}>Applicability</div>
+                    <div style={styles.metricMiniValue}>
+                      {stats.avgApplicability ? Math.round(stats.avgApplicability) : 0}%
+                    </div>
+                    <div style={styles.progressBar}>
+                      <div
+                        style={{
+                          ...styles.progressFill,
+                          width: `${stats.avgApplicability || 0}%`,
+                          backgroundColor: getScoreColor(stats.avgApplicability || 0),
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -277,12 +281,12 @@ const MyProfilePage = () => {
 
         {/* Skills Tab */}
         {activeTab === 'skills' && (
-          <div style={styles.analyticsCard}>
+          <div style={styles.sectionCard}>
             <h3 style={styles.cardTitle}>Performance by Skill</h3>
             {skillAnalytics.length > 0 ? (
               <div style={styles.analyticsList}>
                 {skillAnalytics.map((skill, idx) => (
-                  <div key={idx} style={styles.analyticsItem}>
+                  <div key={idx} style={styles.analyticsItemCard}>
                     <div style={styles.analyticsLeft}>
                       <h4 style={styles.analyticsItemTitle}>{skill.skill || 'Unknown Skill'}</h4>
                       <p style={styles.analyticsItemSubtitle}>
@@ -310,12 +314,12 @@ const MyProfilePage = () => {
 
         {/* Categories Tab */}
         {activeTab === 'categories' && (
-          <div style={styles.analyticsCard}>
+          <div style={styles.sectionCard}>
             <h3 style={styles.cardTitle}>Performance by Category</h3>
             {categoryAnalytics.length > 0 ? (
               <div style={styles.analyticsList}>
                 {categoryAnalytics.map((category, idx) => (
-                  <div key={idx} style={styles.analyticsItem}>
+                  <div key={idx} style={styles.analyticsItemCard}>
                     <div style={styles.analyticsLeft}>
                       <h4 style={styles.analyticsItemTitle}>{category.category || 'Unknown Category'}</h4>
                       <p style={styles.analyticsItemSubtitle}>
@@ -343,13 +347,16 @@ const MyProfilePage = () => {
 
         {/* Trends Tab */}
         {activeTab === 'trends' && (
-          <div style={styles.analyticsCard}>
+          <div style={styles.sectionCard}>
             <h3 style={styles.cardTitle}>Performance Trends (Last 30 Days)</h3>
             {performanceTrends.length > 0 ? (
               <div style={styles.trendsList}>
                 {performanceTrends.map((trend, idx) => (
-                  <div key={idx} style={styles.trendItem}>
-                    <div style={styles.trendDate}>{trend.date || 'Unknown Date'}</div>
+                  <div key={idx} style={styles.trendCard}>
+                    <div style={styles.trendTop}>
+                      <div style={styles.trendDate}>{trend.date || 'Unknown Date'}</div>
+                      <div style={styles.trendCount}>{trend.interviewCount || 0} interview{(trend.interviewCount || 0) !== 1 ? 's' : ''}</div>
+                    </div>
                     <div style={styles.trendBar}>
                       <div
                         style={{
@@ -359,8 +366,7 @@ const MyProfilePage = () => {
                         }}
                       />
                     </div>
-                    <div style={styles.trendScore}>{Math.round(trend.averageScore || 0)}</div>
-                    <div style={styles.trendCount}>{trend.interviewCount || 0} interview{(trend.interviewCount || 0) !== 1 ? 's' : ''}</div>
+                    <div style={styles.trendScoreChip}>{Math.round(trend.averageScore || 0)}/100</div>
                   </div>
                 ))}
               </div>
@@ -372,12 +378,12 @@ const MyProfilePage = () => {
 
         {/* Feedback Tab */}
         {activeTab === 'feedback' && (
-          <div style={styles.analyticsCard}>
+          <div style={styles.sectionCard}>
             <h3 style={styles.cardTitle}>Detailed Feedback History</h3>
             {feedbackHistory.length > 0 ? (
               <div style={styles.feedbackList}>
                 {feedbackHistory.map((item, idx) => (
-                  <div key={idx} style={styles.feedbackItem}>
+                  <div key={idx} style={styles.feedbackItemCard}>
                     <div style={styles.feedbackTop}>
                       <div>
                         <h4 style={styles.feedbackQuestion}>
@@ -391,7 +397,7 @@ const MyProfilePage = () => {
                       </div>
                       <div
                         style={{
-                          ...styles.feedbackScore,
+                          ...styles.feedbackScoreBadge,
                           backgroundColor: getScoreColor(item.score || 0),
                         }}
                       >
@@ -520,14 +526,15 @@ const styles = {
     margin: '0 auto',
   },
   profileHeader: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '40px',
+    background: 'linear-gradient(135deg, #ffffff 0%, #f7fbf9 100%)',
+    borderRadius: '20px',
+    padding: '32px',
     marginBottom: '30px',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+    boxShadow: '0 12px 28px rgba(0, 0, 0, 0.16)',
     display: 'flex',
     gap: '30px',
     alignItems: 'flex-start',
+    border: '1px solid #e5efe9',
   },
   avatarContainer: {
     flexShrink: 0,
@@ -552,7 +559,25 @@ const styles = {
     fontSize: '32px',
     fontWeight: 'bold',
     color: '#333',
-    margin: '0 0 8px 0',
+    margin: 0,
+  },
+  userNameRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+    marginBottom: '8px',
+  },
+  rankBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 12px',
+    borderRadius: '999px',
+    background: 'linear-gradient(135deg, #238845 0%, #14532d 100%)',
+    color: 'white',
+    fontSize: '13px',
+    fontWeight: '700',
+    letterSpacing: '0.2px',
   },
   email: {
     fontSize: '16px',
@@ -595,17 +620,17 @@ const styles = {
     gap: '12px',
     marginBottom: '30px',
     overflowX: 'auto',
-    background: 'white',
-    borderRadius: '12px',
-    padding: '12px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+    background: 'rgba(255,255,255,0.94)',
+    borderRadius: '14px',
+    padding: '10px',
+    boxShadow: '0 8px 20px rgba(0, 0, 0, 0.14)',
   },
   tabButton: {
-    padding: '10px 20px',
-    background: 'transparent',
-    color: '#666',
+    padding: '10px 16px',
+    background: '#f3f7f5',
+    color: '#4b5563',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     cursor: 'pointer',
     fontSize: '14px',
     fontWeight: '600',
@@ -613,8 +638,9 @@ const styles = {
     whiteSpace: 'nowrap',
   },
   tabButtonActive: {
-    background: '#238845',
+    background: 'linear-gradient(135deg, #238845 0%, #14532d 100%)',
     color: 'white',
+    boxShadow: '0 6px 14px rgba(20, 83, 45, 0.3)',
   },
   statsGrid: {
     display: 'grid',
@@ -623,12 +649,12 @@ const styles = {
     marginBottom: '30px',
   },
   statCard: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '24px',
+    background: 'linear-gradient(145deg, #ffffff 0%, #f7faf9 100%)',
+    borderRadius: '14px',
+    padding: '22px',
     textAlign: 'center',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-    border: '2px solid #f0f0f0',
+    boxShadow: '0 8px 18px rgba(0, 0, 0, 0.08)',
+    border: '1px solid #e8efeb',
   },
   statLabel: {
     fontSize: '14px',
@@ -643,39 +669,44 @@ const styles = {
     fontWeight: 'bold',
     color: '#238845',
   },
-  performanceCard: {
-    background: 'white',
+  sectionCard: {
+    background: 'linear-gradient(145deg, #ffffff 0%, #f8fbfa 100%)',
     borderRadius: '16px',
-    padding: '30px',
+    padding: '24px',
     marginBottom: '30px',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-  },
-  analyticsCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '30px',
-    marginBottom: '30px',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.14)',
+    border: '1px solid #e6eeea',
   },
   cardTitle: {
-    fontSize: '20px',
+    fontSize: '22px',
     fontWeight: 'bold',
     color: '#333',
     marginBottom: '30px',
     borderBottom: '2px solid #f0f0f0',
     paddingBottom: '15px',
   },
-  metricRow: {
+  metricsMiniGrid: {
     display: 'grid',
-    gridTemplateColumns: '120px 1fr 80px',
-    alignItems: 'center',
-    gap: '20px',
-    marginBottom: '25px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '14px',
   },
-  metricLabel: {
-    fontSize: '14px',
+  metricMiniCard: {
+    background: '#ffffff',
+    border: '1px solid #e5ece8',
+    borderRadius: '12px',
+    padding: '14px',
+  },
+  metricMiniLabel: {
+    fontSize: '13px',
     fontWeight: '600',
-    color: '#333',
+    color: '#6b7280',
+    marginBottom: '6px',
+  },
+  metricMiniValue: {
+    fontSize: '22px',
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: '10px',
   },
   progressBar: {
     height: '12px',
@@ -688,26 +719,20 @@ const styles = {
     transition: 'width 0.3s ease',
     borderRadius: '6px',
   },
-  metricValue: {
-    fontSize: '14px',
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'right',
-  },
   // NEW: Analytics List Styles
   analyticsList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
   },
-  analyticsItem: {
+  analyticsItemCard: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '16px',
-    backgroundColor: '#f9f9f9',
+    background: '#ffffff',
     borderRadius: '10px',
-    border: '1px solid #e0e0e0',
+    border: '1px solid #e6ece9',
     transition: 'all 0.3s',
   },
   analyticsLeft: {
@@ -747,15 +772,19 @@ const styles = {
     flexDirection: 'column',
     gap: '16px',
   },
-  trendItem: {
-    display: 'grid',
-    gridTemplateColumns: '100px 1fr 60px 120px',
+  trendCard: {
+    padding: '14px',
+    background: '#ffffff',
+    borderRadius: '10px',
+    border: '1px solid #e6ece9',
+  },
+  trendTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '16px',
-    padding: '12px',
-    backgroundColor: '#f9f9f9',
-    borderRadius: '8px',
-    border: '1px solid #e0e0e0',
+    gap: '12px',
+    marginBottom: '10px',
+    flexWrap: 'wrap',
   },
   trendDate: {
     fontSize: '14px',
@@ -773,16 +802,21 @@ const styles = {
     transition: 'width 0.3s ease',
     borderRadius: '6px',
   },
-  trendScore: {
-    fontSize: '14px',
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-  },
   trendCount: {
     fontSize: '12px',
     color: '#999',
-    textAlign: 'right',
+  },
+  trendScoreChip: {
+    marginTop: '10px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '4px 10px',
+    borderRadius: '999px',
+    background: '#edf7f1',
+    color: '#166534',
+    fontSize: '12px',
+    fontWeight: '700',
   },
   // NEW: Feedback Styles
   feedbackList: {
@@ -790,11 +824,11 @@ const styles = {
     flexDirection: 'column',
     gap: '16px',
   },
-  feedbackItem: {
+  feedbackItemCard: {
     padding: '16px',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#ffffff',
     borderRadius: '10px',
-    border: '1px solid #e0e0e0',
+    border: '1px solid #e6ece9',
   },
   feedbackTop: {
     display: 'flex',
@@ -822,10 +856,10 @@ const styles = {
     borderRadius: '4px',
     border: '1px solid #e0e0e0',
   },
-  feedbackScore: {
+  feedbackScoreBadge: {
     width: '60px',
     height: '60px',
-    borderRadius: '8px',
+    borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -856,10 +890,11 @@ const styles = {
     margin: '0 0 12px 0',
   },
   interviewsCard: {
-    background: 'white',
+    background: 'linear-gradient(145deg, #ffffff 0%, #f8fbfa 100%)',
     borderRadius: '16px',
-    padding: '30px',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+    padding: '24px',
+    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.14)',
+    border: '1px solid #e6eeea',
   },
   interviewsList: {
     display: 'flex',

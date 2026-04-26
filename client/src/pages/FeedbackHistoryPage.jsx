@@ -7,6 +7,9 @@ const FeedbackHistoryPage = () => {
   const [interviews, setInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
 
   const normalizeFeedbackItems = (value) => {
     if (Array.isArray(value)) {
@@ -32,6 +35,21 @@ const FeedbackHistoryPage = () => {
       setLoading(false);
     }
   };
+
+  const filteredInterviews = interviews.filter((interview) => {
+    const question = String(interview.question || '').toLowerCase();
+    const feedback = String(interview.feedback || '').toLowerCase();
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return true;
+    return question.includes(query) || feedback.includes(query);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredInterviews.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pagedInterviews = filteredInterviews.slice(
+    (safeCurrentPage - 1) * pageSize,
+    safeCurrentPage * pageSize
+  );
 
   if (loading) {
     return (
@@ -64,55 +82,122 @@ const FeedbackHistoryPage = () => {
             </button>
           </div>
         ) : (
-          <div style={styles.interviewsList}>
-            {interviews.map((interview) => (
-              <div
-                key={interview._id}
-                style={styles.interviewCard}
-                onClick={() => setSelectedInterview(interview)}
-              >
-                <div style={styles.interviewHeader}>
-                  <h3 style={styles.question}>{interview.question}</h3>
-                  <div style={styles.date}>
-                    {new Date(interview.timestamp).toLocaleDateString()}
-                  </div>
+          <div style={styles.listingContainer}>
+            <div style={styles.searchRow}>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                placeholder="Search by question or feedback..."
+                style={styles.searchInput}
+              />
+            </div>
+
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Question</th>
+                    <th style={styles.th}>Date</th>
+                    <th style={styles.th}>Combined</th>
+                    <th style={styles.th}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedInterviews.map((interview) => {
+                    const combined = Math.round(
+                      ((interview.clarity || 0) * 0.4) +
+                      ((interview.confidence || 0) * 0.3) +
+                      ((interview.applicability || 0) * 0.3)
+                    );
+                    return (
+                      <tr key={interview._id} style={styles.tr}>
+                        <td style={styles.tdQuestion}>
+                          {interview.question || 'Question unavailable'}
+                        </td>
+                        <td style={styles.td}>
+                          {new Date(interview.timestamp).toLocaleDateString()}
+                        </td>
+                        <td style={styles.td}>
+                          <span
+                            style={{
+                              ...styles.scoreBadge,
+                              background:
+                                combined >= 70 ? '#ecfdf3' : combined >= 50 ? '#fff7ed' : '#fef2f2',
+                              color:
+                                combined >= 70 ? '#166534' : combined >= 50 ? '#b45309' : '#b91c1c',
+                            }}
+                          >
+                            {combined}/100
+                          </span>
+                        </td>
+                        <td style={styles.td}>
+                          <button
+                            type="button"
+                            style={styles.viewButton}
+                            onClick={() => setSelectedInterview(interview)}
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {pagedInterviews.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={styles.emptyTableText}>
+                        No feedback matches your search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={styles.paginationRow}>
+              <span style={styles.paginationText}>
+                Page {safeCurrentPage} of {totalPages}
+              </span>
+              <div style={styles.paginationControls}>
+                <div style={styles.rowsPerPage}>
+                  <label htmlFor="rows-per-page" style={styles.rowsLabel}>Rows per page:</label>
+                  <select
+                    id="rows-per-page"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    style={styles.rowsSelect}
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                  </select>
                 </div>
-                <div style={styles.scoresRow}>
-                  <div style={styles.scoreItem}>
-                    <span style={styles.scoreLabel}>Clarity:</span>
-                    <span style={{
-                      ...styles.scoreValue,
-                      color: interview.clarity >= 70 ? '#2ecc71' : interview.clarity >= 50 ? '#f39c12' : '#e74c3c'
-                    }}>
-                      {interview.clarity}/100
-                    </span>
-                  </div>
-                  <div style={styles.scoreItem}>
-                    <span style={styles.scoreLabel}>Confidence:</span>
-                    <span style={{
-                      ...styles.scoreValue,
-                      color: interview.confidence >= 70 ? '#2ecc71' : interview.confidence >= 50 ? '#f39c12' : '#e74c3c'
-                    }}>
-                      {interview.confidence}/100
-                    </span>
-                  </div>
-                  <div style={styles.scoreItem}>
-                    <span style={styles.scoreLabel}>Applicability:</span>
-                    <span style={{
-                      ...styles.scoreValue,
-                      color: interview.applicability >= 70 ? '#2ecc71' : interview.applicability >= 50 ? '#f39c12' : '#e74c3c'
-                    }}>
-                      {interview.applicability}/100
-                    </span>
-                  </div>
+                <div style={styles.paginationButtons}>
+                <button
+                  type="button"
+                  style={styles.pageButton}
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  style={styles.pageButton}
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
                 </div>
-                {interview.feedback && (
-                  <p style={styles.feedbackPreview}>
-                    {interview.feedback.substring(0, 100)}...
-                  </p>
-                )}
               </div>
-            ))}
+            </div>
           </div>
         )}
 
@@ -240,6 +325,131 @@ const styles = {
     fontWeight: 'bold',
     cursor: 'pointer',
     marginTop: '20px',
+  },
+  listingContainer: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '18px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+  },
+  searchRow: {
+    marginBottom: '12px',
+  },
+  searchInput: {
+    width: '100%',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    fontSize: '14px',
+    outline: 'none',
+  },
+  tableWrap: {
+    overflowX: 'auto',
+    border: '1px solid #e5e7eb',
+    borderRadius: '10px',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    minWidth: '680px',
+  },
+  th: {
+    textAlign: 'left',
+    fontSize: '13px',
+    color: '#4b5563',
+    background: '#f9fafb',
+    padding: '12px',
+    borderBottom: '1px solid #e5e7eb',
+    fontWeight: 700,
+  },
+  tr: {
+    borderBottom: '1px solid #f1f5f9',
+  },
+  td: {
+    padding: '12px',
+    fontSize: '14px',
+    color: '#1f2937',
+    verticalAlign: 'middle',
+  },
+  tdQuestion: {
+    padding: '12px',
+    fontSize: '14px',
+    color: '#111827',
+    maxWidth: '420px',
+    lineHeight: 1.5,
+  },
+  scoreBadge: {
+    display: 'inline-block',
+    borderRadius: '999px',
+    padding: '5px 10px',
+    fontSize: '12px',
+    fontWeight: 700,
+  },
+  viewButton: {
+    border: '1px solid #238845',
+    background: 'white',
+    color: '#238845',
+    borderRadius: '8px',
+    padding: '6px 12px',
+    fontSize: '13px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  emptyTableText: {
+    padding: '18px',
+    fontSize: '14px',
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  paginationRow: {
+    marginTop: '12px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+  paginationText: {
+    fontSize: '13px',
+    color: '#6b7280',
+  },
+  paginationButtons: {
+    display: 'flex',
+    gap: '8px',
+  },
+  paginationControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+    marginLeft: 'auto',
+  },
+  rowsPerPage: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  rowsLabel: {
+    fontSize: '13px',
+    color: '#6b7280',
+  },
+  rowsSelect: {
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    padding: '5px 8px',
+    fontSize: '13px',
+    background: '#fff',
+    color: '#1f2937',
+  },
+  pageButton: {
+    border: '1px solid #d1d5db',
+    background: '#fff',
+    color: '#1f2937',
+    borderRadius: '8px',
+    padding: '6px 12px',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: 'pointer',
   },
   interviewsList: {
     display: 'grid',

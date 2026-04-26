@@ -107,6 +107,10 @@ const CompetitionPage = () => {
     setStatus('active');
   };
 
+  const handleBackToJoin = () => {
+    setStatus('lobby');
+  };
+
   if (competitionComplete && rankings) {
     return (
       <div style={styles.container}>
@@ -224,6 +228,7 @@ const CompetitionPage = () => {
             userName={user.name}
             requiredPlayers={requiredPlayers}
             onCompetitionStart={handleCompetitionStart}
+            onBackToJoin={handleBackToJoin}
           />
         </div>
       )}

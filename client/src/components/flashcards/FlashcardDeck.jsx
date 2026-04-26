@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Flashcard from './Flashcard';
 import api from '../../services/api';
 
@@ -8,11 +8,7 @@ const FlashcardDeck = ({ category, role = null }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchFlashcards();
-  }, [category]);
-
-  const fetchFlashcards = async () => {
+  const fetchFlashcards = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -32,7 +28,11 @@ const FlashcardDeck = ({ category, role = null }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [category, role]);
+
+  useEffect(() => {
+    fetchFlashcards();
+  }, [fetchFlashcards]);
 
   const handleNext = () => {
     if (currentIndex < flashcards.length - 1) {

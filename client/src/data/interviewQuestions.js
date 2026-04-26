@@ -853,16 +853,19 @@ export const ROLE_QUESTIONS = {
 
 // Helper function to get question text from question object
 export const getQuestionText = (questionObj) => {
-  return typeof questionObj === 'string' ? questionObj : questionObj.question;
+  if (!questionObj) return '';
+  return typeof questionObj === 'string' ? questionObj : (questionObj.question || '');
 };
 
 // Helper function to get category from question object
 export const getQuestionCategory = (questionObj) => {
+  if (!questionObj) return 'general';
   return typeof questionObj === 'string' ? 'general' : (questionObj.category || 'general');
 };
 
 // Helper function to get difficulty from question object
 export const getQuestionDifficulty = (questionObj) => {
+  if (!questionObj) return 'intermediate';
   return typeof questionObj === 'string' ? 'intermediate' : (questionObj.difficulty || 'intermediate');
 };
 

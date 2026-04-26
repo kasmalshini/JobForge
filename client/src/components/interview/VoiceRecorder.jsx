@@ -16,14 +16,16 @@ const VoiceRecorder = ({ onTranscriptChange, onAnswerSubmit, disabled, resetKey 
   }, []);
 
   useEffect(() => {
-    speechService.current.onTranscriptUpdate = (newTranscript) => {
+    const recognitionService = speechService.current;
+
+    recognitionService.onTranscriptUpdate = (newTranscript) => {
       setTranscript(newTranscript);
       if (onTranscriptChange) {
         onTranscriptChange(newTranscript);
       }
     };
 
-    speechService.current.onError = (error) => {
+    recognitionService.onError = (error) => {
       console.error('Speech recognition error:', error);
       if (error === 'no-speech' || error === 'audio-capture') {
         // Handle silently or show user-friendly message
@@ -31,7 +33,7 @@ const VoiceRecorder = ({ onTranscriptChange, onAnswerSubmit, disabled, resetKey 
     };
 
     return () => {
-      speechService.current.stop();
+      recognitionService.stop();
       if (mediaRecorderRef.current?.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
@@ -55,9 +57,6 @@ const VoiceRecorder = ({ onTranscriptChange, onAnswerSubmit, disabled, resetKey 
     if (useGoogleSpeech) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : 'audio/webm';
         const recorder = new MediaRecorder(stream);
         chunksRef.current = [];
         recorder.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data);

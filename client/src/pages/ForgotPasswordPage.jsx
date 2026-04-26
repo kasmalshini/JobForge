@@ -10,6 +10,7 @@ const ForgotPasswordPage = () => {
   const [success, setSuccess] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [resetLink, setResetLink] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
   const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -18,6 +19,7 @@ const ForgotPasswordPage = () => {
     setSuccess('');
     setResetToken('');
     setResetLink('');
+    setPreviewUrl('');
     setCopied(false);
     setLoading(true);
 
@@ -31,6 +33,9 @@ const ForgotPasswordPage = () => {
         }
         if (response.data.resetLink) {
           setResetLink(response.data.resetLink);
+        }
+        if (response.data.previewUrl) {
+          setPreviewUrl(response.data.previewUrl);
         }
       }
     } catch (err) {
@@ -99,6 +104,15 @@ const ForgotPasswordPage = () => {
             </div>
           )}
 
+          {previewUrl && (
+            <div style={styles.tokenContainer}>
+              <p style={styles.tokenLabel}>Dev Email Preview URL:</p>
+              <a href={previewUrl} style={styles.resetLink} target="_blank" rel="noreferrer">
+                {previewUrl}
+              </a>
+            </div>
+          )}
+
           <button type="submit" style={styles.button} disabled={loading}>
             {loading ? 'Sending...' : 'Send Reset Token'}
           </button>
@@ -108,7 +122,7 @@ const ForgotPasswordPage = () => {
             onClick={() => navigate('/login')}
             style={styles.backButton}
           >
-            Back to Login
+            ← Back to Login
           </button>
         </form>
       </div>

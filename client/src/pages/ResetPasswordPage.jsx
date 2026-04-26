@@ -112,7 +112,7 @@ const ResetPasswordPage = () => {
             onClick={() => navigate('/login')}
             style={styles.backButton}
           >
-            Back to Login
+            ← Back to Login
           </button>
         </form>
       </div>

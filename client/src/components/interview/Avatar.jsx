@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { useSpring, animated } from '@react-spring/web';
 
 const Avatar = ({ isSpeaking }) => {
